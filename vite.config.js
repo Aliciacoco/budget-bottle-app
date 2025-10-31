@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: '/budget-bottle-app/',  // 设置为你的 GitHub 仓库名
+  base: './',  // 设置为你的 GitHub 仓库名
   plugins: [react()],
   server: {
     host: '0.0.0.0', // 允许外部访问
