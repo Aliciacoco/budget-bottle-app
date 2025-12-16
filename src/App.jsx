@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Settings, ArrowLeft, X, Heart, Calendar, Edit, Trash2, ChevronLeft, ChevronRight, FileText, PiggyBank, History, Info } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Plus, Settings, ArrowLeft, X, Heart, Calendar, Edit, Trash2, ChevronLeft, ChevronRight, FileText, PiggyBank, History, Info, Check, Plane, Gift, Car, Home, ShoppingBag, Utensils, Music, Gamepad, Book, Briefcase, CreditCard, DollarSign, Menu } from 'lucide-react';
 import './leancloud.js'
 import { 
   getWeeklyBudget,
@@ -22,8 +22,32 @@ import {
   addToWishPool,
   getWishPoolHistory,
   createWishPoolHistory,
-  checkWeekSettled
+  checkWeekSettled,
+  getSpecialBudgets,
+  createSpecialBudget,
+  updateSpecialBudget,
+  deleteSpecialBudget,
+  getSpecialBudgetItems,
+  createSpecialBudgetItem,
+  updateSpecialBudgetItem,
+  deleteSpecialBudgetItem
 } from './api.js';
+
+// ==================== 图标配置 ====================
+const BUDGET_ICONS = {
+  travel: { icon: Plane, label: '旅行', color: '#3B82F6' },
+  gift: { icon: Gift, label: '礼物', color: '#EC4899' },
+  car: { icon: Car, label: '交通', color: '#10B981' },
+  home: { icon: Home, label: '家居', color: '#F59E0B' },
+  shopping: { icon: ShoppingBag, label: '购物', color: '#8B5CF6' },
+  food: { icon: Utensils, label: '餐饮', color: '#EF4444' },
+  music: { icon: Music, label: '娱乐', color: '#06B6D4' },
+  game: { icon: Gamepad, label: '游戏', color: '#84CC16' },
+  book: { icon: Book, label: '学习', color: '#6366F1' },
+  work: { icon: Briefcase, label: '工作', color: '#78716C' },
+  credit: { icon: CreditCard, label: '账单', color: '#F97316' },
+  other: { icon: DollarSign, label: '其他', color: '#64748B' }
+};
 
 // ==================== 本地缓存工具函数 ====================
 const CACHE_KEY = 'budget_bottle_cache';
@@ -31,7 +55,6 @@ const CACHE_EXPIRY = 5 * 60 * 1000; // 5分钟过期
 
 const saveToCache = (data) => {
   try {
-    // 不保存图片数据，避免超出localStorage配额
     const cacheData = {
       ...data,
       wishes: data.wishes?.map(w => ({ ...w, image: null })) || [],
@@ -39,7 +62,6 @@ const saveToCache = (data) => {
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
   } catch (e) {
-    // 如果还是超出配额，清空缓存后重试
     if (e.name === 'QuotaExceededError') {
       try {
         localStorage.removeItem(CACHE_KEY);
@@ -66,7 +88,6 @@ const loadFromCache = () => {
     if (!cached) return null;
     
     const data = JSON.parse(cached);
-    // 检查是否过期
     if (Date.now() - data.timestamp > CACHE_EXPIRY) {
       localStorage.removeItem(CACHE_KEY);
       return null;
@@ -164,17 +185,200 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel }) => {
   );
 };
 
+// ==================== 计算器组件 ====================
+const Calculator = ({ value, onChange, onClose }) => {
+  const [display, setDisplay] = useState(value ? value.toString() : '');
+  const [hasOperator, setHasOperator] = useState(false);
+  
+  const handleNumber = (num) => {
+    setDisplay(prev => {
+      // 如果当前显示为空或为0，直接替换（小数点除外）
+      if (prev === '' || prev === '0') {
+        return num === '.' ? '0.' : num;
+      }
+      // 防止多个小数点
+      if (num === '.' && prev.includes('.')) {
+        return prev;
+      }
+      return prev + num;
+    });
+  };
+  
+  const handleOperator = (op) => {
+    if (display && !hasOperator) {
+      setDisplay(prev => prev + ' ' + op + ' ');
+      setHasOperator(true);
+    }
+  };
+  
+  const handleClear = () => {
+    setDisplay('');
+    setHasOperator(false);
+  };
+  
+  const handleBackspace = () => {
+    setDisplay(prev => {
+      const newVal = prev.trim().slice(0, -1).trim();
+      if (!newVal.includes('+') && !newVal.includes('-') && !newVal.includes('×') && !newVal.includes('÷')) {
+        setHasOperator(false);
+      }
+      return newVal;
+    });
+  };
+  
+  const calculate = () => {
+    try {
+      let expr = display
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/\s/g, '');
+      // eslint-disable-next-line no-eval
+      const result = eval(expr);
+      return isNaN(result) ? 0 : Math.round(result * 100) / 100;
+    } catch {
+      return 0;
+    }
+  };
+  
+  const handleConfirm = () => {
+    const result = calculate();
+    onChange(result);
+    onClose();
+  };
+  
+  const displayResult = calculate();
+  
+  return (
+    <div 
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black bg-opacity-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-t-3xl w-full max-w-md overflow-hidden animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 显示区域 */}
+        <div className="p-6 bg-gray-50">
+          <div className="text-right">
+            <div className="text-2xl text-cyan-500 font-bold mb-1">
+              ¥{display || '0'}
+            </div>
+            {hasOperator && (
+              <div className="text-sm text-gray-400">
+                = ¥{displayResult}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* 键盘区域 */}
+        <div className="p-4 grid grid-cols-4 gap-3">
+          {['1', '2', '3', '+'].map(key => (
+            <button
+              key={key}
+              onClick={() => {
+                if (key === '+') handleOperator('+');
+                else handleNumber(key);
+              }}
+              className={`py-4 rounded-xl text-xl font-medium active:scale-95 transition-transform ${
+                key === '+' ? 'bg-gray-100 text-gray-600' : 'bg-white border border-gray-200'
+              }`}
+            >
+              {key}
+            </button>
+          ))}
+          {['4', '5', '6', '-'].map(key => (
+            <button
+              key={key}
+              onClick={() => {
+                if (key === '-') handleOperator('-');
+                else handleNumber(key);
+              }}
+              className={`py-4 rounded-xl text-xl font-medium active:scale-95 transition-transform ${
+                key === '-' ? 'bg-gray-100 text-gray-600' : 'bg-white border border-gray-200'
+              }`}
+            >
+              {key}
+            </button>
+          ))}
+          {['7', '8', '9', '×'].map(key => (
+            <button
+              key={key}
+              onClick={() => {
+                if (key === '×') handleOperator('×');
+                else handleNumber(key);
+              }}
+              className={`py-4 rounded-xl text-xl font-medium active:scale-95 transition-transform ${
+                key === '×' ? 'bg-gray-100 text-gray-600' : 'bg-white border border-gray-200'
+              }`}
+            >
+              {key}
+            </button>
+          ))}
+          <button
+            onClick={() => handleNumber('.')}
+            className="py-4 rounded-xl text-xl font-medium bg-white border border-gray-200 active:scale-95"
+          >
+            .
+          </button>
+          <button
+            onClick={() => handleNumber('0')}
+            className="py-4 rounded-xl text-xl font-medium bg-white border border-gray-200 active:scale-95"
+          >
+            0
+          </button>
+          <button
+            onClick={handleBackspace}
+            className="py-4 rounded-xl text-xl font-medium bg-gray-100 text-gray-600 active:scale-95"
+          >
+            ⌫
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="py-4 rounded-xl text-xl font-medium bg-cyan-500 text-white active:scale-95"
+          >
+            完成
+          </button>
+        </div>
+        
+        {/* 取消按钮 */}
+        <div className="px-4 pb-6">
+          <button
+            onClick={onClose}
+            className="w-full py-3 text-gray-500 text-center"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+      
+      <style>{`
+        @keyframes slide-up {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        .animate-slide-up {
+          animation: slide-up 0.3s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+};
+
 // 瓶子组件 - 使用自定义 SVG
 const RabbitBottle = ({ remaining, total, spent, onStrawClick, onBodyClick }) => {
   
   const percentage = total > 0 ? (remaining / total) * 100 : 0;
+  // 最大液体高度设置为315px
+  const maxLiquidHeight = 315;
   const fillHeight = Math.max(0, Math.min(100, percentage));
+  const actualFillHeight = (fillHeight / 100) * maxLiquidHeight;
   
   const bodyBottom = 403;
   const bodyHeight = 320;
   const bodyTop = bodyBottom - bodyHeight; 
-  const fillY = bodyTop + (bodyHeight * (1 - fillHeight / 100));
-  const fillRectHeight = bodyHeight * fillHeight / 100;
+  const fillY = bodyBottom - actualFillHeight;
+  const fillRectHeight = actualFillHeight;
 
   return (
     <div 
@@ -186,6 +390,10 @@ const RabbitBottle = ({ remaining, total, spent, onStrawClick, onBodyClick }) =>
           <clipPath id="cupBodyClip">
             <path d="M74.0823 83H326.082L297.704 403H102.461L74.0823 83Z" />
           </clipPath>
+          <linearGradient id="liquidGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#00D4F0" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#00C3E0" stopOpacity="1" />
+          </linearGradient>
         </defs>
         
         <path d="M333.402 83H66.7584C63.0704 83 60.0823 80.0128 60.0823 76.3258V75.6742C60.0823 71.9872 63.0704 69 66.7584 69H333.406C337.094 69 340.082 71.9872 340.082 75.6742V76.3258C340.078 80.0128 337.09 83 333.402 83Z" fill="#E6E6E6"/>
@@ -210,16 +418,35 @@ const RabbitBottle = ({ remaining, total, spent, onStrawClick, onBodyClick }) =>
           <path d="M252.082 83H223.11L137.484 402.5H166.456L252.082 83Z" fill="#ffffff" fillOpacity="0.2"/>
         </g>
         
+        {/* 液体主体 */}
         <rect
           x="74"
           y={fillY}
           width="252"
           height={fillRectHeight + 5}
-          fill="#00C3E0"
+          fill="url(#liquidGradient)"
           clipPath="url(#cupBodyClip)"
           onClick={onBodyClick}
           style={{ cursor: 'pointer' }}
         />
+        
+        {/* 5px高的波浪动画 */}
+        {fillRectHeight > 0 && (
+          <g clipPath="url(#cupBodyClip)">
+            <path
+              className="bottle-wave-1"
+              d={`M74 ${fillY + 2} Q120 ${fillY - 3} 160 ${fillY + 2} T250 ${fillY} T326 ${fillY + 2} L326 ${fillY + 8} L74 ${fillY + 8} Z`}
+              fill="#00D4F0"
+              fillOpacity="0.8"
+            />
+            <path
+              className="bottle-wave-2"
+              d={`M74 ${fillY + 3} Q130 ${fillY + 6} 180 ${fillY + 1} T270 ${fillY + 4} T326 ${fillY + 2} L326 ${fillY + 10} L74 ${fillY + 10} Z`}
+              fill="#00E5FF"
+              fillOpacity="0.5"
+            />
+          </g>
+        )}
         
         <rect x="208" y="418" width="14" height="10" fill="#E0E0E0"/>
         <rect x="222" y="435" width="25" height="10" rx="5" transform="rotate(-90 222 435)" fill="#4F4F4F"/>
@@ -237,42 +464,312 @@ const RabbitBottle = ({ remaining, total, spent, onStrawClick, onBodyClick }) =>
           点击吸管记录消费
         </div>
       </div>
+      
+      <style>{`
+        @keyframes bottleWave1 {
+          0%, 100% { transform: translateX(0); }
+          50% { transform: translateX(-15px); }
+        }
+        @keyframes bottleWave2 {
+          0%, 100% { transform: translateX(0); }
+          50% { transform: translateX(10px); }
+        }
+        .bottle-wave-1 { animation: bottleWave1 2s ease-in-out infinite; }
+        .bottle-wave-2 { animation: bottleWave2 2.5s ease-in-out infinite; }
+      `}</style>
     </div>
   );
 };
 
-// ==================== 优化后的心愿池组件（带波浪动画）====================
-const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick, maxPoolAmount = 5000, debugMode = false, onDebugChange }) => {
-  // 最大液体高度500px，最小容器高度180px
+// ==================== 首页侧边栏组件 ====================
+const HomeSidebar = ({ 
+  fixedExpenses, 
+  specialBudgets, 
+  onFixedExpensesClick, 
+  onSpecialBudgetClick,
+  onBudgetListClick 
+}) => {
+  const pinnedBudgets = specialBudgets.filter(b => b.pinnedToHome);
+  
+  return (
+    <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-2">
+      {/* 固定/灵活预算入口 */}
+      <button
+        onClick={onFixedExpensesClick}
+        className="flex items-center gap-2 bg-white bg-opacity-90 backdrop-blur-sm rounded-full pl-3 pr-4 py-2 shadow-lg active:scale-95 transition-transform"
+      >
+        <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
+          <Menu size={14} className="text-gray-600" />
+        </div>
+        <span className="text-sm font-medium text-gray-700">
+          固定/灵活预算
+        </span>
+      </button>
+      
+      {/* 固定到首页的专项预算 */}
+      {pinnedBudgets.map(budget => {
+        const iconConfig = BUDGET_ICONS[budget.icon] || BUDGET_ICONS.other;
+        const IconComponent = iconConfig.icon;
+        
+        return (
+          <button
+            key={budget.id}
+            onClick={() => onSpecialBudgetClick(budget)}
+            className="flex items-center gap-2 bg-white bg-opacity-90 backdrop-blur-sm rounded-full pl-3 pr-4 py-2 shadow-lg active:scale-95 transition-transform"
+          >
+            <div 
+              className="w-6 h-6 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: `${iconConfig.color}20` }}
+            >
+              <IconComponent size={14} style={{ color: iconConfig.color }} />
+            </div>
+            <span className="text-sm font-medium text-gray-700">
+              {budget.name}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ==================== 物理引擎心愿池组件 ====================
+const WishPoolBar = ({ 
+  poolAmount, 
+  wishes, 
+  onAddClick, 
+  onWishClick, 
+  onPoolClick, 
+  maxPoolAmount = 5000, 
+  debugMode = false, 
+  onDebugChange 
+}) => {
   const MAX_LIQUID_HEIGHT = 500;
   const MIN_CONTAINER_HEIGHT = 130;
-  const SEABED_HEIGHT = 40; // 海底固定高度
-  const HEADER_HEIGHT = 50; // 顶部文案区域高度
-  const WISH_BALL_SIZE = 48; // 心愿球直径
+  const SEABED_HEIGHT = 40;
+  const HEADER_HEIGHT = 50;
+  const BALL_SIZE = 48;
+  const BALL_RADIUS = BALL_SIZE / 2;
+  
+  const containerRef = useRef(null);
+  const animationRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(400);
+  const [ballPositions, setBallPositions] = useState([]);
   
   // 计算液体高度
   const liquidHeight = Math.min(MAX_LIQUID_HEIGHT, (poolAmount / maxPoolAmount) * MAX_LIQUID_HEIGHT);
   const hasBalance = poolAmount > 0;
   
-  // SVG容器高度 = 液体高度 + 海底高度，但至少要有基础高度
-  const svgHeight = Math.max(MIN_CONTAINER_HEIGHT, liquidHeight + SEABED_HEIGHT);
+  // 计算需要的行数（提前计算以确定容器高度）
+  const padding = 16;
+  const gap = 12;
+  const ballsPerRow = Math.max(1, Math.floor((containerWidth - padding * 2 + gap) / (BALL_SIZE + gap)));
+  const totalItems = wishes.length + 1;
+  const rows = Math.ceil(totalItems / ballsPerRow);
+  const ballsAreaHeight = rows * (BALL_SIZE + gap);
   
-  // 整个组件高度
+  // 计算SVG和容器高度
+  const baseSvgHeight = Math.max(MIN_CONTAINER_HEIGHT, liquidHeight + SEABED_HEIGHT);
+  const svgHeight = Math.max(baseSvgHeight, SEABED_HEIGHT + ballsAreaHeight + 20);
   const totalHeight = HEADER_HEIGHT + svgHeight;
+  const seabedTop = svgHeight - SEABED_HEIGHT;
+  const liquidTop = hasBalance ? (svgHeight - SEABED_HEIGHT - liquidHeight) : seabedTop;
   
-  // 在SVG坐标系中的位置
-  const seabedTop = svgHeight - SEABED_HEIGHT; // 海底顶部
-  const liquidTop = hasBalance ? (svgHeight - SEABED_HEIGHT - liquidHeight) : seabedTop; // 液体顶部
-  const liquidBottom = seabedTop; // 液体底部紧贴海底
+  // 物理参数
+  const GRAVITY = 0.5;
+  const FRICTION = 0.98;
+  const BOUNCE = 0.6;
+  const BUOYANCY = hasBalance ? 0.3 : 0;
   
-  // 心愿球位置计算（像素值，相对于SVG容器顶部）
-  // 有余额：心愿球100%沉在水中，顶部与液面平齐
-  // 无余额：心愿球紧贴海底上方，无间隙
-  const wishBallTop = hasBalance 
-    ? liquidTop + 5 // 100%沉在水中，顶部在液面稍下方
-    : seabedTop - WISH_BALL_SIZE; // 紧贴海底上方，无间隙
+  const getSeabedY = useCallback((x, seabedTopY) => {
+    const svgX = (x / containerWidth) * 400;
+    const wave1 = Math.sin((svgX / 400) * Math.PI * 2) * 3;
+    const wave2 = Math.sin((svgX / 400) * Math.PI * 4 + 1) * 2;
+    const wave3 = Math.cos((svgX / 400) * Math.PI * 3) * 1.5;
+    return seabedTopY + wave1 + wave2 + wave3;
+  }, [containerWidth]);
   
-  // 关闭调试模式
+  const getMaxYForBall = useCallback((ballX) => {
+    const centerX = ballX + BALL_RADIUS;
+    const seabedY = getSeabedY(centerX, seabedTop);
+    return seabedY - BALL_SIZE;
+  }, [getSeabedY, seabedTop]);
+  
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.offsetWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+  
+  const getGroundY = useCallback((x) => {
+    if (hasBalance) {
+      return liquidTop + 5;
+    } else {
+      return getMaxYForBall(x);
+    }
+  }, [hasBalance, liquidTop, getMaxYForBall]);
+  
+  useEffect(() => {
+    const allItems = [{ id: 'add-button', isButton: true }, ...wishes];
+    
+    setBallPositions(prev => {
+      const newPositions = allItems.map((item, index) => {
+        const existingPos = prev.find(p => p.id === item.id);
+        
+        const row = Math.floor(index / ballsPerRow);
+        const col = index % ballsPerRow;
+        const targetX = padding + col * (BALL_SIZE + gap);
+        
+        const baseGroundY = getGroundY(targetX);
+        const targetY = baseGroundY + row * (BALL_SIZE + gap);
+        
+        if (existingPos) {
+          return {
+            ...existingPos,
+            targetX,
+            targetY,
+            isButton: item.isButton || false,
+            fulfilled: item.fulfilled || false
+          };
+        }
+        
+        const startY = item.isButton ? targetY : -BALL_SIZE - Math.random() * 50;
+        
+        return {
+          id: item.id,
+          x: targetX,
+          y: startY,
+          vx: 0,
+          vy: 0,
+          targetX,
+          targetY,
+          isButton: item.isButton || false,
+          fulfilled: item.fulfilled || false
+        };
+      });
+      
+      return newPositions;
+    });
+  }, [wishes, containerWidth, hasBalance, svgHeight, ballsPerRow, getGroundY]);
+  
+  useEffect(() => {
+    const animate = () => {
+      setBallPositions(prev => {
+        let hasMovement = false;
+        
+        const updated = prev.map((ball, index) => {
+          if (ball.isButton) {
+            return { ...ball, x: ball.targetX, y: ball.targetY };
+          }
+          
+          let { x, y, vx, vy, targetX, targetY } = ball;
+          
+          vy += GRAVITY;
+          
+          if (hasBalance && y > liquidTop) {
+            vy -= BUOYANCY;
+          }
+          
+          vx *= FRICTION;
+          vy *= FRICTION;
+          
+          const dx = targetX - x;
+          const dy = targetY - y;
+          vx += dx * 0.02;
+          vy += dy * 0.02;
+          
+          x += vx;
+          y += vy;
+          
+          if (x < padding) {
+            x = padding;
+            vx = -vx * BOUNCE;
+          }
+          if (x > containerWidth - padding - BALL_SIZE) {
+            x = containerWidth - padding - BALL_SIZE;
+            vx = -vx * BOUNCE;
+          }
+          
+          const maxY = getMaxYForBall(x);
+          if (y > maxY) {
+            y = maxY;
+            vy = -vy * BOUNCE;
+            if (Math.abs(vy) < 0.5) vy = 0;
+          }
+          
+          if (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1 || 
+              Math.abs(x - targetX) > 1 || Math.abs(y - targetY) > 1) {
+            hasMovement = true;
+          }
+          
+          return { ...ball, x, y, vx, vy };
+        });
+        
+        for (let i = 0; i < updated.length; i++) {
+          if (updated[i].isButton) continue;
+          
+          for (let j = i + 1; j < updated.length; j++) {
+            if (updated[j].isButton) continue;
+            
+            const ball1 = updated[i];
+            const ball2 = updated[j];
+            
+            const dx = (ball2.x + BALL_RADIUS) - (ball1.x + BALL_RADIUS);
+            const dy = (ball2.y + BALL_RADIUS) - (ball1.y + BALL_RADIUS);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDist = BALL_SIZE;
+            
+            if (distance < minDist && distance > 0) {
+              hasMovement = true;
+              
+              const overlap = (minDist - distance) / 2;
+              const nx = dx / distance;
+              const ny = dy / distance;
+              
+              updated[i].x -= overlap * nx;
+              updated[i].y -= overlap * ny;
+              updated[j].x += overlap * nx;
+              updated[j].y += overlap * ny;
+              
+              const maxY1 = getMaxYForBall(updated[i].x);
+              const maxY2 = getMaxYForBall(updated[j].x);
+              if (updated[i].y > maxY1) updated[i].y = maxY1;
+              if (updated[j].y > maxY2) updated[j].y = maxY2;
+              
+              const dvx = ball1.vx - ball2.vx;
+              const dvy = ball1.vy - ball2.vy;
+              const dvn = dvx * nx + dvy * ny;
+              
+              if (dvn > 0) {
+                updated[i].vx -= dvn * nx * BOUNCE;
+                updated[i].vy -= dvn * ny * BOUNCE;
+                updated[j].vx += dvn * nx * BOUNCE;
+                updated[j].vy += dvn * ny * BOUNCE;
+              }
+            }
+          }
+        }
+        
+        return updated;
+      });
+      
+      animationRef.current = requestAnimationFrame(animate);
+    };
+    
+    animationRef.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [containerWidth, hasBalance, liquidTop, getMaxYForBall]);
+  
   const closeDebugMode = () => {
     if (debugMode) {
       onDebugChange?.(-1);
@@ -281,7 +778,6 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
   
   return (
     <div className="relative" style={{ height: `${totalHeight}px` }}>
-      {/* 调试模式遮罩层 - 点击关闭 */}
       {debugMode && (
         <div 
           className="fixed inset-0 z-[5]" 
@@ -289,7 +785,6 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
         />
       )}
       
-      {/* 调试控制面板 */}
       {debugMode && (
         <div 
           className="absolute top-0 right-2 z-10 bg-black bg-opacity-70 text-white text-xs p-2 rounded"
@@ -297,47 +792,19 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
         >
           <div className="mb-1">调试模式 (液体高度: {Math.round(liquidHeight)}px)</div>
           <div className="flex gap-1 flex-wrap">
-            <button 
-              onClick={() => onDebugChange?.(0)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥0
-            </button>
-            <button 
-              onClick={() => onDebugChange?.(500)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥500
-            </button>
-            <button 
-              onClick={() => onDebugChange?.(1000)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥1000
-            </button>
-            <button 
-              onClick={() => onDebugChange?.(2500)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥2500
-            </button>
-            <button 
-              onClick={() => onDebugChange?.(5000)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥5000
-            </button>
-            <button 
-              onClick={() => onDebugChange?.(10000)}
-              className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
-            >
-              ¥10000
-            </button>
+            {[0, 500, 1000, 2500, 5000, 10000].map(val => (
+              <button 
+                key={val}
+                onClick={() => onDebugChange?.(val)}
+                className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
+              >
+                ¥{val}
+              </button>
+            ))}
           </div>
         </div>
       )}
       
-      {/* 文案放在波浪上方 - 可点击 */}
       <div 
         className="pl-6 pb-3 flex items-center gap-2 cursor-pointer active:opacity-80" 
         style={{ height: `${HEADER_HEIGHT}px` }}
@@ -352,7 +819,6 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
             已积攒 ¥{poolAmount.toLocaleString()}
           </div>
         </div>
-        {/* 点击切换调试模式的小按钮 */}
         <button 
           onClick={(e) => {
             e.stopPropagation();
@@ -365,30 +831,29 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
         </button>
       </div>
       
-      {/* 心愿池容器 */}
-      <div className="relative w-full" style={{ height: `${svgHeight}px` }}>
+      <div 
+        ref={containerRef}
+        className="relative w-full" 
+        style={{ height: `${svgHeight}px` }}
+      >
         <svg 
           viewBox={`0 0 400 ${svgHeight}`}
           className="w-full h-full" 
           preserveAspectRatio="none"
         >
           <defs>
-            {/* 蓝色液体渐变 */}
             <linearGradient id="liquidGradient" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="#00C3E0" stopOpacity="0.85" />
               <stop offset="100%" stopColor="#00C3E0" stopOpacity="0.95" />
             </linearGradient>
-            {/* 海底渐变 */}
             <linearGradient id="seabedGradient" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="#574262" stopOpacity="0.95" />
               <stop offset="100%" stopColor="#3d2d45" stopOpacity="1" />
             </linearGradient>
           </defs>
           
-          {/* 有余额时显示蓝色液体主体 */}
           {hasBalance && (
             <>
-              {/* 液体主体 */}
               <rect
                 x="0"
                 y={liquidTop + 12}
@@ -396,40 +861,21 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
                 height={liquidHeight}
                 fill="url(#liquidGradient)"
               />
-              
-              {/* 波浪动画层 - 第一层波浪 */}
               <path
                 className="wave-animation-1"
-                d={`M0 ${liquidTop + 10} 
-                    Q50 ${liquidTop + 5} 100 ${liquidTop + 12}
-                    T200 ${liquidTop + 8}
-                    T300 ${liquidTop + 14}
-                    T400 ${liquidTop + 10}
-                    L400 ${liquidTop + 20} L0 ${liquidTop + 20} Z`}
+                d={`M0 ${liquidTop + 10} Q50 ${liquidTop + 5} 100 ${liquidTop + 12} T200 ${liquidTop + 8} T300 ${liquidTop + 14} T400 ${liquidTop + 10} L400 ${liquidTop + 20} L0 ${liquidTop + 20} Z`}
                 fill="#00C3E0"
                 fillOpacity="0.9"
               />
-              
-              {/* 波浪动画层 - 第二层波浪（半透明叠加） */}
               <path
                 className="wave-animation-2"
-                d={`M0 ${liquidTop + 8} 
-                    Q60 ${liquidTop + 14} 120 ${liquidTop + 6}
-                    T240 ${liquidTop + 12}
-                    T360 ${liquidTop + 8}
-                    T400 ${liquidTop + 10}
-                    L400 ${liquidTop + 18} L0 ${liquidTop + 18} Z`}
+                d={`M0 ${liquidTop + 8} Q60 ${liquidTop + 14} 120 ${liquidTop + 6} T240 ${liquidTop + 12} T360 ${liquidTop + 8} T400 ${liquidTop + 10} L400 ${liquidTop + 18} L0 ${liquidTop + 18} Z`}
                 fill="#00D4F0"
                 fillOpacity="0.5"
               />
-              
-              {/* 高光波浪 */}
               <path
                 className="wave-animation-3"
-                d={`M0 ${liquidTop + 12} 
-                    Q80 ${liquidTop + 8} 160 ${liquidTop + 14}
-                    T320 ${liquidTop + 10}
-                    T400 ${liquidTop + 12}`}
+                d={`M0 ${liquidTop + 12} Q80 ${liquidTop + 8} 160 ${liquidTop + 14} T320 ${liquidTop + 10} T400 ${liquidTop + 12}`}
                 stroke="rgba(255,255,255,0.4)"
                 strokeWidth="2"
                 fill="none"
@@ -437,72 +883,74 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
             </>
           )}
           
-          {/* 海底 - 始终显示，波浪形状 */}
           <path
-            d={`M0 ${seabedTop} 
-                Q50 ${seabedTop - 5} 100 ${seabedTop + 3}
-                T200 ${seabedTop}
-                T300 ${seabedTop + 3}
-                T400 ${seabedTop - 2}
-                L400 ${svgHeight} L0 ${svgHeight} Z`}
+            d={`M0 ${seabedTop} Q50 ${seabedTop - 5} 100 ${seabedTop + 3} T200 ${seabedTop} T300 ${seabedTop + 3} T400 ${seabedTop - 2} L400 ${svgHeight} L0 ${svgHeight} Z`}
             fill="url(#seabedGradient)"
           />
         </svg>
         
-        {/* 心愿球列表 - 浮在水面或落在海底 */}
-        <div 
-          className="absolute left-0 right-0 transition-all duration-300 px-4"
-          style={{ top: `${wishBallTop}px` }}
-        >
-          {/* 使用flex-wrap让心愿球换行 */}
-          <div className="flex flex-wrap gap-3 justify-center">
-            {/* 添加按钮始终在首位 */}
-            <div 
-              className={`w-12 h-12 rounded-full flex items-center justify-center cursor-pointer active:scale-95 shadow-lg transition-all ${
-                hasBalance 
-                  ? 'bg-white bg-opacity-40 hover:bg-opacity-50' 
-                  : 'bg-[#8b7a94] bg-opacity-60 hover:bg-opacity-70'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddClick && onAddClick();
-              }}
-            >
-              <Plus size={22} className="text-white" />
-            </div>
-            
-            {/* 心愿列表 */}
-            {wishes.map((wish, index) => (
-              <div 
-                key={wish.id || index}
-                className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 hover:ring-2 hover:ring-white shadow-lg transition-all ${
+        {ballPositions.map((ball) => {
+          if (ball.isButton) {
+            return (
+              <div
+                key="add-button"
+                className={`absolute w-12 h-12 rounded-full flex items-center justify-center cursor-pointer active:scale-95 shadow-lg transition-colors ${
                   hasBalance 
-                    ? 'bg-white bg-opacity-30' 
-                    : 'bg-[#8b7a94] bg-opacity-50'
+                    ? 'bg-white bg-opacity-40 hover:bg-opacity-50' 
+                    : 'bg-[#8b7a94] bg-opacity-60 hover:bg-opacity-70'
                 }`}
-                title={wish.description}
+                style={{
+                  left: `${ball.x}px`,
+                  top: `${ball.y}px`,
+                  transform: 'translateZ(0)'
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onWishClick && onWishClick(wish);
+                  onAddClick && onAddClick();
                 }}
               >
-                {wish.image ? (
-                  <img src={wish.image} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <Heart size={18} className="text-white" />
-                )}
+                <Plus size={22} className="text-white" />
               </div>
-            ))}
-          </div>
-          {wishes.length > 0 && (
-            <p className="text-center text-white text-opacity-70 text-xs mt-2">
-              点击心愿可编辑
-            </p>
-          )}
-        </div>
+            );
+          }
+          
+          const wish = wishes.find(w => w.id === ball.id);
+          if (!wish) return null;
+          
+          return (
+            <div
+              key={ball.id}
+              className={`absolute w-12 h-12 rounded-full flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 hover:ring-2 hover:ring-white shadow-lg transition-colors ${
+                hasBalance 
+                  ? 'bg-white bg-opacity-30' 
+                  : 'bg-[#8b7a94] bg-opacity-50'
+              } ${ball.fulfilled ? 'ring-2 ring-green-400' : ''}`}
+              style={{
+                left: `${ball.x}px`,
+                top: `${ball.y}px`,
+                transform: 'translateZ(0)'
+              }}
+              title={wish.description}
+              onClick={(e) => {
+                e.stopPropagation();
+                onWishClick && onWishClick(wish);
+              }}
+            >
+              {wish.image ? (
+                <img src={wish.image} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <Heart size={18} className="text-white" />
+              )}
+              {ball.fulfilled && (
+                <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center">
+                  <Check size={24} className="text-white" strokeWidth={3} />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       
-      {/* 波浪动画样式 */}
       <style>{`
         @keyframes wave1 {
           0%, 100% { transform: translateX(0); }
@@ -516,15 +964,9 @@ const WishPoolBar = ({ poolAmount, wishes, onAddClick, onWishClick, onPoolClick,
           0%, 100% { transform: translateX(0); }
           50% { transform: translateX(-10px); }
         }
-        .wave-animation-1 {
-          animation: wave1 3s ease-in-out infinite;
-        }
-        .wave-animation-2 {
-          animation: wave2 2.5s ease-in-out infinite;
-        }
-        .wave-animation-3 {
-          animation: wave3 4s ease-in-out infinite;
-        }
+        .wave-animation-1 { animation: wave1 3s ease-in-out infinite; }
+        .wave-animation-2 { animation: wave2 2.5s ease-in-out infinite; }
+        .wave-animation-3 { animation: wave3 4s ease-in-out infinite; }
       `}</style>
     </div>
   );
@@ -565,7 +1007,6 @@ const AddTransactionView = ({ weekInfo, transactions, setTransactions, viewingTr
 
     if (result.success) {
       setTransactions([...transactions, result.data]);
-      // 同步更新viewingTransactions
       setViewingTransactions([...viewingTransactions, result.data]);
       window.history.back();
     } else {
@@ -651,7 +1092,6 @@ const EditTransactionView = ({ editingTransaction, weekInfo, transactions, setTr
         t.id === editingTransaction.id ? result.data : t
       );
       setTransactions(updated);
-      // 同步更新viewingTransactions
       const updatedViewing = viewingTransactions.map(t => 
         t.id === editingTransaction.id ? result.data : t
       );
@@ -666,7 +1106,6 @@ const EditTransactionView = ({ editingTransaction, weekInfo, transactions, setTr
     const result = await deleteTransaction(editingTransaction.id);
     if (result.success) {
       setTransactions(transactions.filter(t => t.id !== editingTransaction.id));
-      // 同步更新viewingTransactions
       setViewingTransactions(viewingTransactions.filter(t => t.id !== editingTransaction.id));
       window.history.back();
     } else {
@@ -871,12 +1310,13 @@ const EditExpenseView = ({ editingExpense, fixedExpenses, setFixedExpenses }) =>
   );
 };
 
-// 编辑心愿视图
+// 编辑心愿视图 - 增加已实现功能
 const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishPoolAmount }) => {
   const isNew = !editingWish?.id;
   const [description, setDescription] = useState(editingWish?.description || '');
   const [amount, setAmount] = useState(editingWish?.amount?.toString() || '');
   const [image, setImage] = useState(editingWish?.image || null);
+  const [fulfilled, setFulfilled] = useState(editingWish?.fulfilled || false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
 
@@ -885,9 +1325,9 @@ const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishP
 
     let result;
     if (isNew) {
-      result = await createWish(description, parseFloat(amount), image);
+      result = await createWish(description, parseFloat(amount), image, fulfilled);
     } else {
-      result = await updateWish(editingWish.id, description, parseFloat(amount), image);
+      result = await updateWish(editingWish.id, description, parseFloat(amount), image, fulfilled);
     }
 
     if (result.success) {
@@ -912,9 +1352,16 @@ const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishP
   const handlePurchase = async () => {
     await updateWishPool(wishPoolAmount - parseFloat(amount));
     setWishPoolAmount(wishPoolAmount - parseFloat(amount));
-    await deleteWish(editingWish.id);
-    setWishes(wishes.filter(w => w.id !== editingWish.id));
+    const result = await updateWish(editingWish.id, description, parseFloat(amount), image, true);
+    if (result.success) {
+      const wishResult = await getWishes();
+      if (wishResult.success) setWishes(wishResult.data);
+    }
     window.history.back();
+  };
+
+  const handleToggleFulfilled = () => {
+    setFulfilled(!fulfilled);
   };
 
   const handleImageUpload = (e) => {
@@ -926,7 +1373,7 @@ const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishP
     }
   };
 
-  const canPurchase = !isNew && wishPoolAmount >= parseFloat(amount || 0);
+  const canPurchase = !isNew && !fulfilled && wishPoolAmount >= parseFloat(amount || 0);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -944,6 +1391,27 @@ const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishP
         </h1>
 
         <div className="bg-white rounded-2xl p-6 space-y-6">
+          {!isNew && (
+            <div 
+              className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-colors ${
+                fulfilled ? 'bg-green-50 border-2 border-green-200' : 'bg-gray-50 border-2 border-gray-200'
+              }`}
+              onClick={handleToggleFulfilled}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                  fulfilled ? 'bg-green-500' : 'bg-gray-300'
+                }`}>
+                  {fulfilled && <Check size={16} className="text-white" />}
+                </div>
+                <span className={`font-medium ${fulfilled ? 'text-green-700' : 'text-gray-600'}`}>
+                  {fulfilled ? '已实现 🎉' : '未实现'}
+                </span>
+              </div>
+              <span className="text-sm text-gray-400">点击切换</span>
+            </div>
+          )}
+
           <div>
             <label className="block text-gray-600 mb-2">心愿描述</label>
             <input
@@ -1032,7 +1500,7 @@ const EditWishView = ({ editingWish, wishes, setWishes, wishPoolAmount, setWishP
           <div className="bg-white rounded-2xl p-6 mx-4 w-full max-w-sm">
             <h2 className="text-lg font-bold text-gray-800 mb-2">确认购买</h2>
             <p className="text-gray-600 mb-6">
-              确定用心愿池资金 ¥{amount} 购买"{description}"吗？
+              确定用心愿池资金 ¥{amount} 购买"{description}"吗？购买后将标记为已实现。
             </p>
             <div className="flex gap-3">
               <button
@@ -1071,7 +1539,6 @@ const WishPoolHistoryView = ({ wishPoolAmount }) => {
     loadHistory();
   }, []);
 
-  // 计算总积攒金额
   const totalSaved = history.reduce((sum, h) => sum + (h.savedAmount > 0 ? h.savedAmount : 0), 0);
 
   return (
@@ -1088,7 +1555,6 @@ const WishPoolHistoryView = ({ wishPoolAmount }) => {
         <h1 className="text-2xl font-bold text-gray-800 mb-2">心愿池</h1>
         <p className="text-gray-500 mb-6">当前余额 ¥{wishPoolAmount.toLocaleString()}</p>
 
-        {/* 积攒规则卡片 */}
         <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-5 mb-6">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center flex-shrink-0">
@@ -1106,7 +1572,6 @@ const WishPoolHistoryView = ({ wishPoolAmount }) => {
           </div>
         </div>
 
-        {/* 统计卡片 */}
         <div className="bg-white rounded-2xl p-5 mb-6">
           <div className="flex justify-between items-center">
             <div>
@@ -1120,7 +1585,6 @@ const WishPoolHistoryView = ({ wishPoolAmount }) => {
           </div>
         </div>
 
-        {/* 历史记录列表 */}
         <h2 className="text-lg font-semibold text-gray-800 mb-3">积攒历史</h2>
         
         {isLoading ? (
@@ -1157,6 +1621,536 @@ const WishPoolHistoryView = ({ wishPoolAmount }) => {
   );
 };
 
+// ==================== 固定/灵活预算列表视图 ====================
+const BudgetListView = ({ 
+  fixedExpenses, 
+  specialBudgets, 
+  specialBudgetItems,
+  setFixedExpenses,
+  setSpecialBudgets,
+  navigateTo 
+}) => {
+  const totalFixedExpense = fixedExpenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // 计算每个专项预算的已用金额
+  const getSpentAmount = (budgetId) => {
+    const items = specialBudgetItems[budgetId] || [];
+    return items.reduce((sum, item) => sum + (item.actualAmount || 0), 0);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-2xl mx-auto">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center gap-2 text-gray-600 mb-6 active:scale-95"
+        >
+          <ArrowLeft size={20} />
+          返回
+        </button>
+
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">固定/灵活预算</h1>
+
+        {/* 固定支出卡片 */}
+        <div 
+          className="bg-white rounded-2xl p-5 mb-4 cursor-pointer active:scale-[0.99] transition-transform"
+          onClick={() => navigateTo('fixedExpenses')}
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+              <Menu size={24} className="text-gray-600" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-gray-800">固定支出</span>
+                <span className="text-cyan-500 font-semibold">¥{totalFixedExpense.toLocaleString()}/月</span>
+              </div>
+              <p className="text-sm text-gray-400 mt-1">
+                {fixedExpenses.length > 0 
+                  ? fixedExpenses.map(e => e.name).join(' · ')
+                  : '暂无固定支出'
+                }
+              </p>
+            </div>
+            <ChevronRight size={20} className="text-gray-300" />
+          </div>
+        </div>
+
+        {/* 专项预算列表 */}
+        <div className="space-y-3">
+          {specialBudgets.map(budget => {
+            const iconConfig = BUDGET_ICONS[budget.icon] || BUDGET_ICONS.other;
+            const IconComponent = iconConfig.icon;
+            const spentAmount = getSpentAmount(budget.id);
+            
+            return (
+              <div
+                key={budget.id}
+                className="bg-white rounded-2xl p-5 cursor-pointer active:scale-[0.99] transition-transform"
+                onClick={() => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+              >
+                <div className="flex items-center gap-4">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: `${iconConfig.color}15` }}
+                  >
+                    <IconComponent size={24} style={{ color: iconConfig.color }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-gray-800">{budget.name}</span>
+                      <span className="text-red-500 font-semibold">¥{spentAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  {budget.pinnedToHome && (
+                    <div className="px-2 py-1 bg-cyan-50 rounded text-xs text-cyan-600">首页</div>
+                  )}
+                  <ChevronRight size={20} className="text-gray-300" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 添加灵活预算按钮 */}
+        <button
+          onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: { id: null } })}
+          className="w-full mt-4 py-4 bg-white rounded-2xl text-gray-500 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform"
+        >
+          <Plus size={20} />
+          增加灵活预算
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ==================== 专项预算详情视图 ====================
+const SpecialBudgetDetailView = ({ 
+  budget, 
+  items,
+  setItems,
+  navigateTo,
+  refreshBudgets
+}) => {
+  const [localItems, setLocalItems] = useState(items || []);
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingItemName, setEditingItemName] = useState('');
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [calculatorTarget, setCalculatorTarget] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showDeleteItemConfirm, setShowDeleteItemConfirm] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState(null);
+  
+  const iconConfig = BUDGET_ICONS[budget.icon] || BUDGET_ICONS.other;
+  const IconComponent = iconConfig.icon;
+  
+  const totalBudget = localItems.reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
+  const totalSpent = localItems.reduce((sum, item) => sum + (item.actualAmount || 0), 0);
+
+  useEffect(() => {
+    loadItems();
+  }, [budget.id]);
+
+  const loadItems = async () => {
+    setIsLoading(true);
+    const result = await getSpecialBudgetItems(budget.id);
+    if (result.success) {
+      setLocalItems(result.data);
+      setItems(prev => ({ ...prev, [budget.id]: result.data }));
+    }
+    setIsLoading(false);
+  };
+
+  const handleAddItem = async () => {
+    const result = await createSpecialBudgetItem(budget.id, '新项目', 0, 0);
+    if (result.success) {
+      const newItems = [...localItems, result.data];
+      setLocalItems(newItems);
+      setItems(prev => ({ ...prev, [budget.id]: newItems }));
+      // 自动进入编辑模式
+      setEditingItemId(result.data.id);
+      setEditingItemName(result.data.name);
+    }
+  };
+
+  const handleUpdateItem = async (itemId, field, value) => {
+    const item = localItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    const updates = { ...item, [field]: value };
+    const result = await updateSpecialBudgetItem(
+      itemId,
+      updates.name,
+      updates.budgetAmount,
+      updates.actualAmount
+    );
+    
+    if (result.success) {
+      const newItems = localItems.map(i => i.id === itemId ? result.data : i);
+      setLocalItems(newItems);
+      setItems(prev => ({ ...prev, [budget.id]: newItems }));
+    }
+  };
+
+  const handleDeleteItem = async (itemId) => {
+    const result = await deleteSpecialBudgetItem(itemId);
+    if (result.success) {
+      const newItems = localItems.filter(i => i.id !== itemId);
+      setLocalItems(newItems);
+      setItems(prev => ({ ...prev, [budget.id]: newItems }));
+    }
+    setShowDeleteItemConfirm(false);
+    setDeletingItemId(null);
+  };
+
+  const openCalculator = (itemId, field, currentValue) => {
+    setCalculatorTarget({ itemId, field, currentValue });
+    setShowCalculator(true);
+  };
+
+  const handleCalculatorConfirm = (value) => {
+    if (calculatorTarget) {
+      handleUpdateItem(calculatorTarget.itemId, calculatorTarget.field, value);
+    }
+  };
+
+  // 开始编辑项目名称
+  const startEditingName = (item) => {
+    setEditingItemId(item.id);
+    setEditingItemName(item.name);
+  };
+
+  // 保存项目名称
+  const saveItemName = (itemId) => {
+    if (editingItemName.trim()) {
+      handleUpdateItem(itemId, 'name', editingItemName.trim());
+    }
+    setEditingItemId(null);
+    setEditingItemName('');
+  };
+
+  // 确认删除项目
+  const confirmDeleteItem = (itemId) => {
+    setDeletingItemId(itemId);
+    setShowDeleteItemConfirm(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* 头部 */}
+      <div className="bg-white p-6 pb-4">
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={() => window.history.back()}
+            className="text-gray-600 active:scale-95"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div className="flex-1 flex items-center gap-3">
+            <div 
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: `${iconConfig.color}15` }}
+            >
+              <IconComponent size={20} style={{ color: iconConfig.color }} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                {budget.name}
+                <button
+                  onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: budget })}
+                  className="text-gray-400"
+                >
+                  <Edit size={16} />
+                </button>
+              </h1>
+              <p className="text-sm text-gray-400">
+                预算 ¥{totalBudget.toLocaleString()}，已用 ¥{totalSpent.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 子项列表 */}
+      <div className="p-6">
+        {isLoading ? (
+          <div className="bg-white rounded-2xl p-12 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800 mx-auto"></div>
+            <p className="text-gray-400 mt-4">加载中...</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl overflow-hidden">
+            {/* 表头 */}
+            <div className="grid grid-cols-4 px-5 py-3 bg-gray-50 text-sm text-gray-500">
+              <span>项目</span>
+              <span className="text-center">预算</span>
+              <span className="text-center">支出</span>
+              <span className="text-right">操作</span>
+            </div>
+
+            {/* 子项列表 */}
+            {localItems.map(item => (
+              <div key={item.id} className="grid grid-cols-4 items-center px-5 py-4 border-b border-gray-100">
+                {editingItemId === item.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingItemName}
+                      onChange={(e) => setEditingItemName(e.target.value)}
+                      onBlur={() => saveItemName(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          saveItemName(item.id);
+                        }
+                      }}
+                      className="border-b border-cyan-500 focus:outline-none text-gray-800 bg-transparent"
+                      autoFocus
+                    />
+                    <div 
+                      className="text-center text-gray-400 cursor-pointer"
+                      onClick={() => openCalculator(item.id, 'budgetAmount', item.budgetAmount)}
+                    >
+                      ¥{item.budgetAmount || 0}
+                    </div>
+                    <div 
+                      className="text-center text-red-500 font-medium cursor-pointer"
+                      onClick={() => openCalculator(item.id, 'actualAmount', item.actualAmount)}
+                    >
+                      ¥{item.actualAmount || 0}
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => confirmDeleteItem(item.id)}
+                        className="text-red-400 p-1"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span 
+                      className="text-gray-800 cursor-pointer"
+                      onClick={() => startEditingName(item)}
+                    >
+                      {item.name}
+                    </span>
+                    <span 
+                      className="text-center text-gray-400 cursor-pointer"
+                      onClick={() => openCalculator(item.id, 'budgetAmount', item.budgetAmount)}
+                    >
+                      ¥{item.budgetAmount || '-'}
+                    </span>
+                    <span 
+                      className={`text-center font-medium cursor-pointer ${item.actualAmount ? 'text-red-500' : 'text-gray-300'}`}
+                      onClick={() => openCalculator(item.id, 'actualAmount', item.actualAmount)}
+                    >
+                      {item.actualAmount ? `¥${item.actualAmount}` : '-'}
+                    </span>
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => confirmDeleteItem(item.id)}
+                        className="text-gray-300 hover:text-red-400 p-1 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+
+            {/* 添加项目 */}
+            <button
+              onClick={handleAddItem}
+              className="w-full py-4 text-gray-400 flex items-center justify-center gap-2 active:bg-gray-50"
+            >
+              <Plus size={18} />
+              添加项目
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 计算器 */}
+      {showCalculator && (
+        <Calculator
+          value={calculatorTarget?.currentValue || 0}
+          onChange={handleCalculatorConfirm}
+          onClose={() => setShowCalculator(false)}
+        />
+      )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmModal
+        isOpen={showDeleteItemConfirm}
+        title="删除项目"
+        message="确定要删除这个项目吗？此操作无法撤销。"
+        onConfirm={() => handleDeleteItem(deletingItemId)}
+        onCancel={() => {
+          setShowDeleteItemConfirm(false);
+          setDeletingItemId(null);
+        }}
+      />
+    </div>
+  );
+};
+
+// ==================== 编辑专项预算视图 ====================
+const EditSpecialBudgetView = ({ 
+  budget, 
+  specialBudgets,
+  setSpecialBudgets,
+  refreshBudgets
+}) => {
+  const isNew = !budget?.id;
+  const [name, setName] = useState(budget?.name || '');
+  const [icon, setIcon] = useState(budget?.icon || 'travel');
+  const [pinnedToHome, setPinnedToHome] = useState(budget?.pinnedToHome || false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name) return;
+
+    let result;
+    if (isNew) {
+      result = await createSpecialBudget(
+        name, 
+        icon, 
+        0,  // totalBudget 自动计算，不需要设置
+        '', // startDate 不需要
+        '', // endDate 不需要
+        pinnedToHome
+      );
+    } else {
+      result = await updateSpecialBudget(
+        budget.id,
+        name,
+        icon,
+        budget.totalBudget || 0,
+        budget.startDate || '',
+        budget.endDate || '',
+        pinnedToHome
+      );
+    }
+
+    if (result.success) {
+      await refreshBudgets();
+      window.history.back();
+    } else {
+      alert('保存失败: ' + result.error);
+    }
+  };
+
+  const handleDelete = async () => {
+    const result = await deleteSpecialBudget(budget.id);
+    if (result.success) {
+      await refreshBudgets();
+      window.history.go(-2);
+    } else {
+      alert('删除失败: ' + result.error);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-2xl mx-auto">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center gap-2 text-gray-600 mb-6 active:scale-95"
+        >
+          <ArrowLeft size={20} />
+          返回
+        </button>
+
+        <h1 className="text-2xl font-bold text-gray-800 mb-8">
+          {isNew ? '添加灵活预算' : '修改账本信息'}
+        </h1>
+
+        <div className="bg-white rounded-2xl p-6 space-y-6">
+          {/* 图标选择 */}
+          <div>
+            <label className="block text-gray-600 mb-3">图标</label>
+            <div className="flex gap-3 flex-wrap">
+              {Object.entries(BUDGET_ICONS).map(([key, config]) => {
+                const IconComp = config.icon;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setIcon(key)}
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                      icon === key 
+                        ? 'ring-2 ring-offset-2' 
+                        : 'hover:scale-105'
+                    }`}
+                    style={{ 
+                      backgroundColor: `${config.color}15`,
+                      ringColor: icon === key ? config.color : 'transparent'
+                    }}
+                  >
+                    <IconComp size={24} style={{ color: config.color }} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 名称 */}
+          <div>
+            <label className="block text-gray-600 mb-2">账本名称</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例如：泰国游"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-400 focus:outline-none"
+            />
+          </div>
+
+          {/* 固定到首页 */}
+          <div 
+            className="flex items-center justify-between p-4 bg-gray-50 rounded-xl cursor-pointer"
+            onClick={() => setPinnedToHome(!pinnedToHome)}
+          >
+            <span className="text-gray-700">在首页固定</span>
+            <div className={`w-12 h-7 rounded-full transition-colors ${pinnedToHome ? 'bg-cyan-500' : 'bg-gray-300'}`}>
+              <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform mt-1 ${pinnedToHome ? 'translate-x-6' : 'translate-x-1'}`} />
+            </div>
+          </div>
+
+          {/* 按钮 */}
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={handleSubmit}
+              disabled={!name}
+              className="flex-1 py-4 bg-gray-800 text-white rounded-xl font-medium disabled:bg-gray-300 active:scale-95"
+            >
+              确认
+            </button>
+            {!isNew && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-6 py-4 bg-red-500 text-white rounded-xl font-medium active:scale-95"
+              >
+                删除
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="删除灵活预算"
+        message={`确定要删除"${name}"吗？所有子项记录也将被删除，此操作无法撤销。`}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </div>
+  );
+};
+
 // ==================== 主组件 ====================
 
 const BudgetBottleApp = () => {
@@ -1173,7 +2167,12 @@ const BudgetBottleApp = () => {
   const [fixedExpenses, setFixedExpenses] = useState([]);
   const [wishPoolAmount, setWishPoolAmount] = useState(0);
   
+  // 专项预算相关状态
+  const [specialBudgets, setSpecialBudgets] = useState([]);
+  const [specialBudgetItems, setSpecialBudgetItems] = useState({});
+  
   const [isLoading, setIsLoading] = useState(true);
+  const [isDataReady, setIsDataReady] = useState(false);
   const [isLoadingWeek, setIsLoadingWeek] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showAddTransactionModal, setShowAddTransactionModal] = useState(false);
@@ -1181,19 +2180,20 @@ const BudgetBottleApp = () => {
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingWish, setEditingWish] = useState(null);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [editingSpecialBudget, setEditingSpecialBudget] = useState(null);
   const [newBudgetAmount, setNewBudgetAmount] = useState('');
   
   const [newTransactionAmount, setNewTransactionAmount] = useState('');
   const [newTransactionDescription, setNewTransactionDescription] = useState('');
   
-  // 调试模式
   const [debugPoolAmount, setDebugPoolAmount] = useState(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
   
-  // 处理调试模式切换
+  const [isSavingBudget, setIsSavingBudget] = useState(false);
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false);
+  
   const handleDebugChange = (amount) => {
     if (amount === -1) {
-      // 关闭调试模式
       setIsDebugMode(false);
       setDebugPoolAmount(null);
     } else {
@@ -1202,7 +2202,6 @@ const BudgetBottleApp = () => {
     }
   };
 
-  // 浏览器返回支持
   useEffect(() => {
     const handlePopState = (event) => {
       if (event.state && event.state.view) {
@@ -1221,7 +2220,6 @@ const BudgetBottleApp = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // 导航函数
   const navigateTo = useCallback((view, data = {}) => {
     setCurrentView(view);
     window.history.pushState({ view, ...data }, '', window.location.href);
@@ -1230,6 +2228,7 @@ const BudgetBottleApp = () => {
     if (data.editingTransaction) setEditingTransaction(data.editingTransaction);
     if (data.editingWish) setEditingWish(data.editingWish);
     if (data.editingExpense) setEditingExpense(data.editingExpense);
+    if (data.editingSpecialBudget) setEditingSpecialBudget(data.editingSpecialBudget);
     
     if (view === 'transactionList') {
       setViewingWeekInfo(weekInfo);
@@ -1238,19 +2237,15 @@ const BudgetBottleApp = () => {
     }
   }, [weekInfo, weeklyBudget, transactions]);
 
-  // ==================== 周结算逻辑 ====================
   const settleLastWeek = useCallback(async () => {
-    // 获取上周信息
     const lastWeekInfo = getPreviousWeekInfo(weekInfo);
     
-    // 检查上周是否已结算
     const checkResult = await checkWeekSettled(lastWeekInfo.weekKey);
     if (checkResult.settled) {
       console.log('✅ 上周已结算，跳过');
       return;
     }
     
-    // 获取上周预算和交易
     const [budgetResult, transResult] = await Promise.all([
       getWeeklyBudget(lastWeekInfo.weekKey),
       getTransactions(lastWeekInfo.weekKey)
@@ -1269,7 +2264,6 @@ const BudgetBottleApp = () => {
     
     console.log(`📊 上周结算：预算 ¥${lastWeekBudget}，支出 ¥${lastWeekSpent}，节省 ¥${savedAmount}`);
     
-    // 创建结算历史记录
     await createWishPoolHistory(
       lastWeekInfo.weekKey,
       lastWeekBudget,
@@ -1277,7 +2271,6 @@ const BudgetBottleApp = () => {
       savedAmount
     );
     
-    // 如果有节省，添加到心愿池
     if (savedAmount > 0) {
       const poolResult = await addToWishPool(savedAmount);
       if (poolResult.success) {
@@ -1286,16 +2279,21 @@ const BudgetBottleApp = () => {
       }
     }
     
-    // 标记上周预算已结算
     await markWeeklyBudgetSettled(lastWeekInfo.weekKey);
   }, [weekInfo]);
 
-  // 优化的数据加载：先显示缓存，再后台刷新
+  const refreshSpecialBudgets = useCallback(async () => {
+    const result = await getSpecialBudgets();
+    if (result.success) {
+      setSpecialBudgets(result.data);
+    }
+  }, []);
+
   const loadAllData = useCallback(async () => {
-    // 1. 先尝试从缓存加载
+    setIsDataReady(false);
+    
     const cached = loadFromCache();
     if (cached && cached.weekKey === weekInfo.weekKey) {
-      // 立即显示缓存数据
       setWeeklyBudget(cached.weeklyBudget);
       setViewingWeekBudget(cached.weeklyBudget);
       setTransactions(cached.transactions || []);
@@ -1304,21 +2302,16 @@ const BudgetBottleApp = () => {
       setFixedExpenses(cached.fixedExpenses || []);
       setWishPoolAmount(cached.wishPoolAmount || 0);
       setIsLoading(false);
-      
-      // 如果没有预算，显示设置弹窗
-      if (!cached.weeklyBudget) {
-        setShowBudgetModal(true);
-      }
     }
 
-    // 2. 后台请求最新数据
     try {
-      const [budgetResult, transResult, wishResult, expenseResult, poolResult] = await Promise.all([
+      const [budgetResult, transResult, wishResult, expenseResult, poolResult, specialBudgetResult] = await Promise.all([
         getWeeklyBudget(weekInfo.weekKey),
         getTransactions(weekInfo.weekKey),
         getWishes(),
         getFixedExpenses(),
-        getWishPool()
+        getWishPool(),
+        getSpecialBudgets()
       ]);
 
       const newData = {
@@ -1330,13 +2323,9 @@ const BudgetBottleApp = () => {
         wishPoolAmount: poolResult.success ? (poolResult.data?.amount || 0) : 0
       };
 
-      // 更新状态
       if (budgetResult.success) {
         setWeeklyBudget(budgetResult.data);
         setViewingWeekBudget(budgetResult.data);
-        if (!budgetResult.data && !cached?.weeklyBudget) {
-          setShowBudgetModal(true);
-        }
       }
       if (transResult.success) {
         setTransactions(transResult.data);
@@ -1345,15 +2334,21 @@ const BudgetBottleApp = () => {
       if (wishResult.success) setWishes(wishResult.data);
       if (expenseResult.success) setFixedExpenses(expenseResult.data);
       if (poolResult.success) setWishPoolAmount(poolResult.data?.amount || 0);
+      if (specialBudgetResult.success) setSpecialBudgets(specialBudgetResult.data);
 
-      // 保存到缓存
       saveToCache(newData);
       
-      // 3. 检查并执行上周结算
       await settleLastWeek();
+      
+      setIsDataReady(true);
+      
+      if (budgetResult.success && !budgetResult.data) {
+        setShowBudgetModal(true);
+      }
       
     } catch (error) {
       console.error('加载数据失败:', error);
+      setIsDataReady(true);
     } finally {
       setIsLoading(false);
     }
@@ -1434,56 +2429,85 @@ const BudgetBottleApp = () => {
   const handleSetBudget = async () => {
     const amount = parseFloat(newBudgetAmount);
     if (!amount || amount <= 0) return;
+    
+    if (isSavingBudget) {
+      console.log('⏳ 正在保存中，请稍候...');
+      return;
+    }
+    
+    if (!isDataReady) {
+      console.log('⏳ 数据还在加载中，请稍候...');
+      return;
+    }
+    
+    setIsSavingBudget(true);
 
-    const result = await saveWeeklyBudget(weekInfo.weekKey, amount);
-    if (result.success) {
-      setWeeklyBudget(result.data);
-      setViewingWeekBudget(result.data);
-      setShowBudgetModal(false);
-      setNewBudgetAmount('');
-      
-      // 更新缓存
-      const cached = loadFromCache() || {};
-      saveToCache({ ...cached, weeklyBudget: result.data });
-    } else {
-      alert('保存失败: ' + result.error);
+    try {
+      const result = await saveWeeklyBudget(weekInfo.weekKey, amount);
+      if (result.success) {
+        setWeeklyBudget(result.data);
+        setViewingWeekBudget(result.data);
+        setShowBudgetModal(false);
+        setNewBudgetAmount('');
+        
+        const cached = loadFromCache() || {};
+        saveToCache({ ...cached, weeklyBudget: result.data });
+      } else {
+        alert('保存失败: ' + result.error);
+      }
+    } catch (error) {
+      console.error('保存预算出错:', error);
+      alert('保存失败，请重试');
+    } finally {
+      setIsSavingBudget(false);
     }
   };
 
   const handleQuickAddTransaction = async () => {
     if (!newTransactionAmount) return;
+    
+    if (isSavingTransaction) {
+      console.log('⏳ 正在保存中，请稍候...');
+      return;
+    }
+    
+    setIsSavingTransaction(true);
 
-    const now = new Date();
-    const result = await createTransaction(
-      weekInfo.weekKey,
-      formatDate(now),
-      `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-      parseFloat(newTransactionAmount),
-      newTransactionDescription
-    );
+    try {
+      const now = new Date();
+      const result = await createTransaction(
+        weekInfo.weekKey,
+        formatDate(now),
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        parseFloat(newTransactionAmount),
+        newTransactionDescription
+      );
 
-    if (result.success) {
-      const newTransactions = [...transactions, result.data];
-      setTransactions(newTransactions);
-      setViewingTransactions([...viewingTransactions, result.data]);
-      setShowAddTransactionModal(false);
-      setNewTransactionAmount('');
-      setNewTransactionDescription('');
-      
-      // 更新缓存
-      const cached = loadFromCache() || {};
-      saveToCache({ ...cached, transactions: newTransactions });
-    } else {
-      alert('记录失败: ' + result.error);
+      if (result.success) {
+        const newTransactions = [...transactions, result.data];
+        setTransactions(newTransactions);
+        setViewingTransactions([...viewingTransactions, result.data]);
+        setShowAddTransactionModal(false);
+        setNewTransactionAmount('');
+        setNewTransactionDescription('');
+        
+        const cached = loadFromCache() || {};
+        saveToCache({ ...cached, transactions: newTransactions });
+      } else {
+        alert('记录失败: ' + result.error);
+      }
+    } catch (error) {
+      console.error('记录消费出错:', error);
+      alert('记录失败，请重试');
+    } finally {
+      setIsSavingTransaction(false);
     }
   };
 
-  // 如果有缓存数据，不显示骨架屏
   if (isLoading) {
     return <SkeletonHome />;
   }
 
-  // 消费记录列表视图
   const renderTransactionListView = () => {
     const groupedByDate = viewingTransactions.reduce((acc, trans) => {
       const date = trans.date;
@@ -1512,7 +2536,6 @@ const BudgetBottleApp = () => {
             返回
           </button>
 
-          {/* 周切换器 */}
           <div className="flex items-center justify-between mb-4 bg-white rounded-2xl p-3">
             <button
               onClick={goToPreviousWeek}
@@ -1544,7 +2567,6 @@ const BudgetBottleApp = () => {
             </button>
           </div>
 
-          {/* 预算信息卡片 */}
           <div className="bg-white rounded-2xl p-4 mb-6">
             {isLoadingWeek ? (
               <div className="flex justify-center py-4">
@@ -1596,7 +2618,6 @@ const BudgetBottleApp = () => {
             )}
           </div>
 
-          {/* 消费记录列表 */}
           {isLoadingWeek ? (
             <div className="bg-white rounded-2xl p-12 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800 mx-auto"></div>
@@ -1638,7 +2659,6 @@ const BudgetBottleApp = () => {
           )}
         </div>
 
-        {/* 预算编辑模态框 */}
         {showBudgetModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white rounded-2xl p-6 mx-4 w-full max-w-sm">
@@ -1656,6 +2676,7 @@ const BudgetBottleApp = () => {
                   placeholder={weeklyBudget?.amount?.toString() || '600'}
                   className="w-full pl-10 pr-4 py-4 border-2 border-gray-200 rounded-xl text-xl font-bold focus:border-gray-400 focus:outline-none"
                   autoFocus
+                  disabled={isSavingBudget}
                 />
               </div>
               
@@ -1667,14 +2688,16 @@ const BudgetBottleApp = () => {
                 <button
                   onClick={() => setShowBudgetModal(false)}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium active:scale-95 transition-transform"
+                  disabled={isSavingBudget}
                 >
                   取消
                 </button>
                 <button
                   onClick={handleSetBudget}
-                  className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-medium active:scale-95 transition-transform"
+                  disabled={isSavingBudget || !isDataReady}
+                  className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-medium active:scale-95 transition-transform disabled:bg-gray-400"
                 >
-                  确认
+                  {isSavingBudget ? '保存中...' : '确认'}
                 </button>
               </div>
             </div>
@@ -1684,7 +2707,6 @@ const BudgetBottleApp = () => {
     );
   };
 
-  // 固定支出列表视图
   const renderFixedExpensesView = () => {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -1745,7 +2767,6 @@ const BudgetBottleApp = () => {
     );
   };
 
-  // 首页视图
   const renderHomeView = () => (
     <>
       <style>{`
@@ -1767,17 +2788,18 @@ const BudgetBottleApp = () => {
       `}</style>
       
       <div className="min-h-screen bg-white flex flex-col">
-        <div className="absolute top-4 left-5 z-20">
-          <button
-            onClick={() => navigateTo('fixedExpenses')}
-          >
-            <img src="/icons/fixedExpenses.svg" alt="Custom Icon" className="w-10 h-10" />
-          </button>
-        </div>
+        {/* 左上角侧边栏 */}
+        <HomeSidebar
+          fixedExpenses={fixedExpenses}
+          specialBudgets={specialBudgets}
+          onFixedExpensesClick={() => navigateTo('budgetList')}
+          onSpecialBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+          onBudgetListClick={() => navigateTo('budgetList')}
+        />
 
         <div className="pt-16 pb-0 text-center">
           <h1 className="text-xl font-bold text-gray-800">
-            {weekInfo.year}年{weekInfo.month}月 第{weekInfo.weekNumber}周
+            {weekInfo.month}月 第{weekInfo.weekNumber}周
           </h1>
           <p className="text-base text-[#A7ADB4] font-medium mt-1 flex items-center justify-center">
             预算 ¥{weeklyBudget?.amount?.toLocaleString() || 0}，已用 ¥{weeklySpent.toLocaleString()}
@@ -1824,6 +2846,7 @@ const BudgetBottleApp = () => {
                 placeholder={weeklyBudget?.amount?.toString() || '600'}
                 className="w-full pl-10 pr-4 py-4 border-2 border-gray-200 rounded-xl text-xl font-bold focus:border-gray-400 focus:outline-none"
                 autoFocus
+                disabled={isSavingBudget}
               />
             </div>
             
@@ -1835,14 +2858,16 @@ const BudgetBottleApp = () => {
               <button
                 onClick={() => setShowBudgetModal(false)}
                 className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium active:scale-95 transition-transform"
+                disabled={isSavingBudget}
               >
                 取消
               </button>
               <button
                 onClick={handleSetBudget}
-                className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-medium active:scale-95 transition-transform"
+                disabled={isSavingBudget || !isDataReady}
+                className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-medium active:scale-95 transition-transform disabled:bg-gray-400"
               >
-                确认
+                {isSavingBudget ? '保存中...' : (isDataReady ? '确认' : '加载中...')}
               </button>
             </div>
           </div>
@@ -1861,6 +2886,7 @@ const BudgetBottleApp = () => {
                   setNewTransactionDescription('');
                 }}
                 className="text-gray-400"
+                disabled={isSavingTransaction}
               >
                 <X size={24} />
               </button>
@@ -1878,6 +2904,7 @@ const BudgetBottleApp = () => {
                     placeholder="0.00"
                     className="w-full pl-10 pr-4 py-4 border-2 border-gray-200 rounded-xl text-xl font-bold focus:border-gray-400 focus:outline-none"
                     autoFocus
+                    disabled={isSavingTransaction}
                   />
                 </div>
               </div>
@@ -1890,15 +2917,16 @@ const BudgetBottleApp = () => {
                   onChange={(e) => setNewTransactionDescription(e.target.value)}
                   placeholder="例如：超市、外卖..."
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-gray-400 focus:outline-none"
+                  disabled={isSavingTransaction}
                 />
               </div>
 
               <button
                 onClick={handleQuickAddTransaction}
-                disabled={!newTransactionAmount}
+                disabled={!newTransactionAmount || isSavingTransaction}
                 className="w-full py-4 bg-gray-800 text-white rounded-xl font-medium disabled:bg-gray-300 active:scale-95 transition-transform"
               >
-                记录
+                {isSavingTransaction ? '保存中...' : '记录'}
               </button>
             </div>
           </div>
@@ -1961,6 +2989,38 @@ const BudgetBottleApp = () => {
         return (
           <WishPoolHistoryView 
             wishPoolAmount={wishPoolAmount}
+          />
+        );
+      case 'budgetList':
+        return (
+          <BudgetListView
+            fixedExpenses={fixedExpenses}
+            specialBudgets={specialBudgets}
+            specialBudgetItems={specialBudgetItems}
+            setFixedExpenses={setFixedExpenses}
+            setSpecialBudgets={setSpecialBudgets}
+            navigateTo={navigateTo}
+          />
+        );
+      case 'specialBudgetDetail':
+        return (
+          <SpecialBudgetDetailView
+            key={editingSpecialBudget?.id}
+            budget={editingSpecialBudget}
+            items={specialBudgetItems[editingSpecialBudget?.id] || []}
+            setItems={setSpecialBudgetItems}
+            navigateTo={navigateTo}
+            refreshBudgets={refreshSpecialBudgets}
+          />
+        );
+      case 'editSpecialBudget':
+        return (
+          <EditSpecialBudgetView
+            key={editingSpecialBudget?.id || 'new'}
+            budget={editingSpecialBudget}
+            specialBudgets={specialBudgets}
+            setSpecialBudgets={setSpecialBudgets}
+            refreshBudgets={refreshSpecialBudgets}
           />
         );
       default:
