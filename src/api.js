@@ -2,9 +2,6 @@ import AV from './leancloud';
 
 // ==================== 工具函数 ====================
 
-/**
- * 设置对象的公开读写权限
- */
 const setPublicACL = (obj) => {
   const acl = new AV.ACL();
   acl.setPublicReadAccess(true);
@@ -16,11 +13,6 @@ const setPublicACL = (obj) => {
 // ==================== 防重复提交锁 ====================
 const pendingOperations = new Map();
 
-/**
- * 带锁的操作执行器，防止同一操作并发执行
- * @param {string} key - 操作唯一标识
- * @param {Function} operation - 要执行的异步操作
- */
 const withLock = async (key, operation) => {
   if (pendingOperations.has(key)) {
     console.log(`⏳ 操作 "${key}" 正在进行中，等待完成...`);
@@ -37,10 +29,6 @@ const withLock = async (key, operation) => {
 
 // ==================== 周预算相关 API ====================
 
-/**
- * 获取指定周的预算
- * @param {string} weekKey - 周标识，格式：YYYY-MM-WN
- */
 export const getWeeklyBudget = async (weekKey) => {
   try {
     const query = new AV.Query('WeeklyBudget');
@@ -71,9 +59,6 @@ export const getWeeklyBudget = async (weekKey) => {
   }
 };
 
-/**
- * 保存周预算（带防重复提交）
- */
 export const saveWeeklyBudget = async (weekKey, amount) => {
   return withLock(`saveWeeklyBudget:${weekKey}`, async () => {
     try {
@@ -120,9 +105,6 @@ export const saveWeeklyBudget = async (weekKey, amount) => {
   });
 };
 
-/**
- * 标记周预算已结算
- */
 export const markWeeklyBudgetSettled = async (weekKey) => {
   return withLock(`markSettled:${weekKey}`, async () => {
     try {
@@ -147,10 +129,6 @@ export const markWeeklyBudgetSettled = async (weekKey) => {
 
 // ==================== 交易记录相关 API ====================
 
-/**
- * 获取指定周的交易记录
- * @param {string} weekKey - 周标识
- */
 export const getTransactions = async (weekKey) => {
   try {
     const query = new AV.Query('Transaction');
@@ -180,9 +158,6 @@ export const getTransactions = async (weekKey) => {
   }
 };
 
-/**
- * 创建交易记录
- */
 export const createTransaction = async (weekKey, date, time, amount, description) => {
   try {
     const Transaction = AV.Object.extend('Transaction');
@@ -215,9 +190,6 @@ export const createTransaction = async (weekKey, date, time, amount, description
   }
 };
 
-/**
- * 更新交易记录
- */
 export const updateTransaction = async (transactionId, weekKey, amount, description, date = null) => {
   try {
     const query = new AV.Query('Transaction');
@@ -247,9 +219,6 @@ export const updateTransaction = async (transactionId, weekKey, amount, descript
   }
 };
 
-/**
- * 删除交易记录
- */
 export const deleteTransaction = async (transactionId) => {
   try {
     const query = new AV.Query('Transaction');
@@ -266,9 +235,6 @@ export const deleteTransaction = async (transactionId) => {
 
 // ==================== 固定支出相关 API ====================
 
-/**
- * 获取所有固定支出
- */
 export const getFixedExpenses = async () => {
   try {
     const query = new AV.Query('FixedExpense');
@@ -295,9 +261,6 @@ export const getFixedExpenses = async () => {
   }
 };
 
-/**
- * 创建固定支出
- */
 export const createFixedExpense = async (name, amount, expireDate, enabled = true) => {
   try {
     const FixedExpense = AV.Object.extend('FixedExpense');
@@ -328,9 +291,6 @@ export const createFixedExpense = async (name, amount, expireDate, enabled = tru
   }
 };
 
-/**
- * 更新固定支出
- */
 export const updateFixedExpense = async (expenseId, name, amount, expireDate, enabled) => {
   try {
     const query = new AV.Query('FixedExpense');
@@ -360,9 +320,6 @@ export const updateFixedExpense = async (expenseId, name, amount, expireDate, en
   }
 };
 
-/**
- * 删除固定支出
- */
 export const deleteFixedExpense = async (expenseId) => {
   try {
     const query = new AV.Query('FixedExpense');
@@ -377,131 +334,8 @@ export const deleteFixedExpense = async (expenseId) => {
   }
 };
 
-// ==================== 心愿池相关 API ====================
-
-/**
- * 获取心愿池金额
- */
-export const getWishPool = async () => {
-  try {
-    const query = new AV.Query('WishPool');
-    const pool = await query.first();
-    
-    if (pool) {
-      return {
-        success: true,
-        data: {
-          id: pool.id,
-          amount: pool.get('amount') || 0
-        }
-      };
-    }
-    
-    return { success: true, data: { amount: 0 } };
-  } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: { amount: 0 } };
-    }
-    console.error('❌ 加载心愿池失败:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-/**
- * 更新心愿池金额（带锁防止并发）
- */
-export const updateWishPool = async (amount) => {
-  return withLock('updateWishPool', async () => {
-    try {
-      let pool = null;
-      
-      try {
-        const query = new AV.Query('WishPool');
-        pool = await query.first();
-      } catch (queryError) {
-        if (queryError.code !== 101) {
-          throw queryError;
-        }
-      }
-      
-      if (pool) {
-        pool.set('amount', amount);
-      } else {
-        const WishPool = AV.Object.extend('WishPool');
-        pool = new WishPool();
-        pool.set('amount', amount);
-        setPublicACL(pool);
-      }
-      
-      await pool.save(null, { fetchWhenSave: true });
-      
-      console.log('✅ 成功更新心愿池:', amount);
-      return {
-        success: true,
-        data: {
-          id: pool.id,
-          amount: pool.get('amount')
-        }
-      };
-    } catch (error) {
-      console.error('❌ 更新心愿池失败:', error);
-      return { success: false, error: error.message };
-    }
-  });
-};
-
-/**
- * 添加到心愿池（周结算时调用）
- */
-export const addToWishPool = async (addAmount) => {
-  return withLock('addToWishPool', async () => {
-    try {
-      const poolResult = await getWishPool();
-      const currentAmount = poolResult.data?.amount || 0;
-      
-      let pool = null;
-      try {
-        const query = new AV.Query('WishPool');
-        pool = await query.first();
-      } catch (queryError) {
-        if (queryError.code !== 101) {
-          throw queryError;
-        }
-      }
-      
-      const newAmount = currentAmount + addAmount;
-      
-      if (pool) {
-        pool.set('amount', newAmount);
-      } else {
-        const WishPool = AV.Object.extend('WishPool');
-        pool = new WishPool();
-        pool.set('amount', newAmount);
-        setPublicACL(pool);
-      }
-      
-      await pool.save(null, { fetchWhenSave: true });
-      
-      console.log('✅ 成功添加到心愿池:', addAmount, '→ 当前:', newAmount);
-      return {
-        success: true,
-        data: {
-          id: pool.id,
-          amount: pool.get('amount')
-        }
-      };
-    } catch (error) {
-      console.error('❌ 添加到心愿池失败:', error);
-      return { success: false, error: error.message };
-    }
-  });
-};
-
 // ==================== 心愿池积攒历史 API ====================
 
-/**
- * 获取心愿池积攒历史
- */
 export const getWishPoolHistory = async () => {
   try {
     const query = new AV.Query('WishPoolHistory');
@@ -515,6 +349,9 @@ export const getWishPoolHistory = async () => {
       budgetAmount: h.get('budgetAmount'),
       spentAmount: h.get('spentAmount'),
       savedAmount: h.get('savedAmount'),
+      isDeduction: h.get('isDeduction') === true,
+      wishName: h.get('wishName') || '',
+      wishId: h.get('wishId') || '',
       settledAt: h.get('settledAt'),
       createdAt: h.get('createdAt')
     }));
@@ -530,33 +367,102 @@ export const getWishPoolHistory = async () => {
   }
 };
 
+// ==================== 心愿池相关 API ====================
+
 /**
- * 创建积攒历史记录（带防重复）
+ * 获取心愿池余额 - 直接从历史记录计算
+ * 余额 = 所有 savedAmount 的总和（积攒为正，扣除为负）
  */
-export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, savedAmount) => {
+export const getWishPool = async () => {
+  try {
+    const historyResult = await getWishPoolHistory();
+    if (!historyResult.success) {
+      return { success: true, data: { amount: 0 } };
+    }
+    
+    // 直接累加所有 savedAmount（正数为积攒，负数为扣除）
+    const totalAmount = historyResult.data.reduce((sum, h) => sum + (h.savedAmount || 0), 0);
+    
+    console.log('✅ 心愿池余额(从历史计算):', totalAmount);
+    return {
+      success: true,
+      data: { amount: totalAmount }
+    };
+  } catch (error) {
+    console.error('❌ 计算心愿池余额失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 更新心愿池金额 - 已废弃，余额直接从历史计算
+ */
+export const updateWishPool = async (amount) => {
+  console.log('ℹ️ updateWishPool 已废弃，余额从历史记录计算');
+  return { success: true, data: { amount } };
+};
+
+/**
+ * 添加到心愿池 - 已废弃
+ */
+export const addToWishPool = async (addAmount) => {
+  console.log('ℹ️ addToWishPool 已废弃，金额通过历史记录自动计算');
+  return { success: true, data: { amount: addAmount } };
+};
+
+/**
+ * 检查某周是否已结算
+ */
+export const checkWeekSettled = async (weekKey) => {
+  try {
+    const query = new AV.Query('WishPoolHistory');
+    query.equalTo('weekKey', weekKey);
+    // 使用 notEqualTo(true) 而不是 equalTo(false)，因为有些旧数据可能是 undefined
+    query.notEqualTo('isDeduction', true);
+    const result = await query.first();
+    
+    const settled = !!result;
+    console.log(`🔍 检查周 ${weekKey} 是否已结算:`, settled ? '是' : '否');
+    return { success: true, settled };
+  } catch (error) {
+    if (error.code === 101) {
+      return { success: true, settled: false };
+    }
+    console.error('❌ 检查结算状态失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 创建积攒历史记录
+ */
+export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, savedAmount, isDeduction = false, wishName = '', wishId = '') => {
   return withLock(`createHistory:${weekKey}`, async () => {
     try {
-      try {
-        const checkQuery = new AV.Query('WishPoolHistory');
-        checkQuery.equalTo('weekKey', weekKey);
-        const existing = await checkQuery.first();
-        if (existing) {
-          console.log('⏭️ 积攒历史已存在，跳过:', weekKey);
-          return {
-            success: true,
-            data: {
-              id: existing.id,
-              weekKey: existing.get('weekKey'),
-              budgetAmount: existing.get('budgetAmount'),
-              spentAmount: existing.get('spentAmount'),
-              savedAmount: existing.get('savedAmount'),
-              settledAt: existing.get('settledAt')
-            }
-          };
-        }
-      } catch (queryError) {
-        if (queryError.code !== 101) {
-          throw queryError;
+      // 对于周结算记录，先检查是否已存在
+      if (!isDeduction) {
+        try {
+          const checkQuery = new AV.Query('WishPoolHistory');
+          checkQuery.equalTo('weekKey', weekKey);
+          checkQuery.notEqualTo('isDeduction', true);
+          const existing = await checkQuery.first();
+          
+          if (existing) {
+            console.log('⏭️ 该周积攒历史已存在，跳过创建:', weekKey);
+            return {
+              success: true,
+              isNew: false,
+              data: {
+                id: existing.id,
+                weekKey: existing.get('weekKey'),
+                savedAmount: existing.get('savedAmount')
+              }
+            };
+          }
+        } catch (queryError) {
+          if (queryError.code !== 101) {
+            throw queryError;
+          }
         }
       }
       
@@ -567,21 +473,22 @@ export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, 
       history.set('budgetAmount', budgetAmount);
       history.set('spentAmount', spentAmount);
       history.set('savedAmount', savedAmount);
+      history.set('isDeduction', isDeduction);
+      history.set('wishName', wishName);
+      history.set('wishId', wishId);
       history.set('settledAt', new Date());
       setPublicACL(history);
       
       await history.save();
       
-      console.log('✅ 成功创建积攒历史:', weekKey, savedAmount);
+      console.log('✅ 成功创建积攒历史:', isDeduction ? `心愿扣除: ${wishName}` : weekKey, savedAmount);
       return {
         success: true,
+        isNew: true,
         data: {
           id: history.id,
           weekKey: history.get('weekKey'),
-          budgetAmount: history.get('budgetAmount'),
-          spentAmount: history.get('spentAmount'),
-          savedAmount: history.get('savedAmount'),
-          settledAt: history.get('settledAt')
+          savedAmount: history.get('savedAmount')
         }
       };
     } catch (error) {
@@ -591,30 +498,22 @@ export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, 
   });
 };
 
-/**
- * 检查指定周是否已结算
- */
-export const checkWeekSettled = async (weekKey) => {
+export const deleteWishPoolHistory = async (historyId) => {
   try {
     const query = new AV.Query('WishPoolHistory');
-    query.equalTo('weekKey', weekKey);
-    const history = await query.first();
+    const history = await query.get(historyId);
+    await history.destroy();
     
-    return { success: true, settled: !!history };
+    console.log('✅ 成功删除心愿池历史记录:', historyId);
+    return { success: true };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, settled: false };
-    }
-    console.error('❌ 检查结算状态失败:', error);
+    console.error('❌ 删除心愿池历史记录失败:', error);
     return { success: false, error: error.message };
   }
 };
 
 // ==================== 愿望清单相关 API ====================
 
-/**
- * 获取愿望清单
- */
 export const getWishes = async () => {
   try {
     const query = new AV.Query('Wish');
@@ -641,9 +540,6 @@ export const getWishes = async () => {
   }
 };
 
-/**
- * 创建愿望
- */
 export const createWish = async (description, amount, image, fulfilled = false) => {
   try {
     const Wish = AV.Object.extend('Wish');
@@ -674,9 +570,6 @@ export const createWish = async (description, amount, image, fulfilled = false) 
   }
 };
 
-/**
- * 更新愿望
- */
 export const updateWish = async (wishId, description, amount, image, fulfilled = false) => {
   try {
     const query = new AV.Query('Wish');
@@ -706,9 +599,6 @@ export const updateWish = async (wishId, description, amount, image, fulfilled =
   }
 };
 
-/**
- * 删除愿望
- */
 export const deleteWish = async (wishId) => {
   try {
     const query = new AV.Query('Wish');
@@ -725,9 +615,6 @@ export const deleteWish = async (wishId) => {
 
 // ==================== 专项预算相关 API ====================
 
-/**
- * 获取所有专项预算
- */
 export const getSpecialBudgets = async () => {
   try {
     const query = new AV.Query('SpecialBudget');
@@ -756,9 +643,6 @@ export const getSpecialBudgets = async () => {
   }
 };
 
-/**
- * 创建专项预算
- */
 export const createSpecialBudget = async (name, icon, totalBudget, startDate, endDate, pinnedToHome = false) => {
   try {
     const SpecialBudget = AV.Object.extend('SpecialBudget');
@@ -793,9 +677,6 @@ export const createSpecialBudget = async (name, icon, totalBudget, startDate, en
   }
 };
 
-/**
- * 更新专项预算
- */
 export const updateSpecialBudget = async (budgetId, name, icon, totalBudget, startDate, endDate, pinnedToHome) => {
   try {
     const query = new AV.Query('SpecialBudget');
@@ -829,12 +710,8 @@ export const updateSpecialBudget = async (budgetId, name, icon, totalBudget, sta
   }
 };
 
-/**
- * 删除专项预算（同时删除所有子项）
- */
 export const deleteSpecialBudget = async (budgetId) => {
   try {
-    // 先删除所有子项
     try {
       const itemQuery = new AV.Query('SpecialBudgetItem');
       itemQuery.equalTo('budgetId', budgetId);
@@ -848,7 +725,6 @@ export const deleteSpecialBudget = async (budgetId) => {
       }
     }
     
-    // 再删除预算本身
     const query = new AV.Query('SpecialBudget');
     const budget = await query.get(budgetId);
     await budget.destroy();
@@ -863,9 +739,6 @@ export const deleteSpecialBudget = async (budgetId) => {
 
 // ==================== 专项预算子项相关 API ====================
 
-/**
- * 获取专项预算的所有子项
- */
 export const getSpecialBudgetItems = async (budgetId) => {
   try {
     const query = new AV.Query('SpecialBudgetItem');
@@ -893,9 +766,6 @@ export const getSpecialBudgetItems = async (budgetId) => {
   }
 };
 
-/**
- * 创建专项预算子项
- */
 export const createSpecialBudgetItem = async (budgetId, name, budgetAmount, actualAmount = 0) => {
   try {
     const SpecialBudgetItem = AV.Object.extend('SpecialBudgetItem');
@@ -926,9 +796,6 @@ export const createSpecialBudgetItem = async (budgetId, name, budgetAmount, actu
   }
 };
 
-/**
- * 更新专项预算子项
- */
 export const updateSpecialBudgetItem = async (itemId, name, budgetAmount, actualAmount) => {
   try {
     const query = new AV.Query('SpecialBudgetItem');
@@ -957,9 +824,6 @@ export const updateSpecialBudgetItem = async (itemId, name, budgetAmount, actual
   }
 };
 
-/**
- * 删除专项预算子项
- */
 export const deleteSpecialBudgetItem = async (itemId) => {
   try {
     const query = new AV.Query('SpecialBudgetItem');
