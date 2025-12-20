@@ -1,158 +1,200 @@
-//预算云朵组件 - 修复液体填充问题
+// BudgetCloud.jsx - 云朵组件
+// 使用设计系统优化
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+
+// 设计系统颜色
+export const CLOUD_COLOR = '#06B6D4';  // cyan-500
 
 const BudgetCloud = ({ remaining, total, spent, onClick }) => {
-  // 计算剩余百分比
+  const canvasRef = useRef(null);
+  
+  // 原始SVG云朵路径边界: x: 26-334 (宽308), y: 38-262 (高224)
+  const originalW = 308;
+  const originalH = 224;
+  const logicalW = 280;
+  const logicalH = Math.round(logicalW * (originalH / originalW));
+
   const percentage = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
-  
-  // 云朵尺寸
-  const cloudWidth = 280;
-  const cloudHeight = 180;
-  
-  // 液体高度（从底部开始）
-  const liquidHeight = (percentage / 100) * cloudHeight;
-  
-  // 根据剩余百分比决定颜色
-  const getColor = () => {
-    if (remaining < 0) return { light: '#fee2e2', dark: '#ef4444' }; // 红色 - 超支
-    if (percentage < 30) return { light: '#fef3c7', dark: '#f59e0b' }; // 黄色 - 警告
-    return { light: '#a5f3fc', dark: '#06b6d4' }; // 青色 - 正常
-  };
-  
-  const colors = getColor();
+
+  // 固定颜色
+  const liquidColor = CLOUD_COLOR;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animationFrameId;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = logicalW * dpr;
+    canvas.height = logicalH * dpr;
+    ctx.scale(dpr, dpr);
+
+    let phase = 0;
+    const speed = 0.04;
+    const wavelength = 0.025;
+    const amplitude = 4;
+    let currentH = percentage;
+
+    const C_TOP = 0.35;
+    const C_BOT = 0.95;
+
+    // 气泡设置
+    const B_SETTINGS = [
+      { x: 45,  y: logicalH * 0.80, maxR: 5, delay: 80 },
+      { x: 110, y: logicalH * 0.99, maxR: 8, delay: 0 },
+      { x: 175, y: logicalH * 0.90, maxR: 6, delay: 320 },
+      { x: 240, y: logicalH * 0.88, maxR: 4, delay: 180 }
+    ];
+
+    const bubbles = B_SETTINGS.map(set => ({
+      ...set, r: 0.1, status: 'waiting', waitCounter: 0, f: 0,
+      maxTravel: logicalH * 0.3, configY: set.y, dyingRStart: 0
+    }));
+
+    const bubbleSVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="45" fill="white" fill-opacity="0.20"/>
+    <path d="M62 38 A 18 18 0 0 1 72 52" 
+    fill="none" 
+    stroke="${liquidColor.replace('#', '%23')}"
+    stroke-width="6" 
+    stroke-linecap="round" 
+    stroke-opacity="0.6"/>
+    </svg>`;
+    const bubbleImg = new Image();
+    bubbleImg.src = bubbleSVG;
+
+    const render = () => {
+      ctx.clearRect(0, 0, logicalW, logicalH);
+      currentH += (percentage - currentH) * 0.08;
+
+      const tY = logicalH * C_TOP;
+      const bY = logicalH * C_BOT;
+      const fillRange = bY - tY - amplitude * 2;
+      const waterLevel = bY - amplitude - (fillRange * (currentH / 100));
+
+      // 绘制液体
+      ctx.beginPath();
+      ctx.fillStyle = liquidColor;
+      ctx.moveTo(0, logicalH);
+      
+      for (let x = 0; x <= logicalW; x++) {
+        const waveY = waterLevel + Math.sin(x * wavelength + phase) * amplitude;
+        ctx.lineTo(x, waveY);
+      }
+      
+      ctx.lineTo(logicalW, logicalH);
+      ctx.closePath();
+      ctx.fill();
+
+      // 绘制气泡
+      bubbles.forEach(b => {
+        if (b.status === 'waiting') {
+          b.waitCounter++;
+          if (b.waitCounter >= (100 + b.delay)) {
+            b.status = 'birthing'; 
+            b.f = 0; 
+            b.r = 0.1; 
+            b.y = b.configY;
+          }
+        } else {
+          b.y -= 0.2;
+          
+          if (b.status === 'birthing') {
+            b.f++; 
+            b.r = (b.f / 25) * b.maxR;
+            if (b.f >= 25) b.status = 'moving';
+          } else if (b.status === 'moving') {
+            b.r *= 0.998;
+            const travel = b.configY - b.y;
+            if (travel >= b.maxTravel || b.y <= waterLevel + b.r) {
+              b.status = 'dying'; 
+              b.f = 0; 
+              b.dyingRStart = b.r;
+            }
+          } else if (b.status === 'dying') {
+            b.f++; 
+            b.r = b.dyingRStart * (1 - b.f / 25);
+          }
+
+          if ((b.status === 'dying' && b.f >= 25) || b.r <= 0.05) {
+            b.status = 'waiting'; 
+            b.waitCounter = 0;
+          }
+
+          if (b.y > waterLevel && b.status !== 'waiting' && b.r > 0) {
+            ctx.save();
+            const drawSize = Math.max(0.5, b.r * 2);
+            if (b.status === 'birthing') ctx.globalAlpha = b.f / 25;
+            if (b.status === 'dying') ctx.globalAlpha = 1 - b.f / 25;
+            ctx.drawImage(bubbleImg, b.x - drawSize / 2, b.y - drawSize / 2, drawSize, drawSize);
+            ctx.restore();
+          }
+        }
+      });
+
+      phase += speed;
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    bubbleImg.onload = () => render();
+    if (bubbleImg.complete) render();
+    
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [percentage, logicalH, liquidColor]);
+
+  // 原始SVG云朵路径
+  const cloudPath = "M170.621 38C201.558 38 228.755 53.2859 244.555 76.4834L245.299 77.5938L245.306 77.6035C247.53 81.0058 251.079 83.3252 255.11 84.0352L255.502 84.0986L255.511 84.0996C299.858 90.8163 334 127.546 334 172.283C334 221.589 294.443 261.625 245.621 261.625H104.896L104.79 261.619C61.1843 259.33 26 226.502 26 185.76C26 154.771 46.4474 128.375 75.3525 116.578L75.3594 116.575C79.8465 114.754 83.1194 110.742 84.1465 105.889C92.3483 67.057 128.005 38.0001 170.621 38Z";
 
   return (
     <div 
-      className="relative cursor-pointer active:scale-95 transition-transform"
+      className="relative cursor-pointer active:scale-95 transition-transform duration-300 flex items-center justify-center"
       onClick={onClick}
-      style={{ width: cloudWidth, height: cloudHeight }}
+      style={{ 
+        width: '100%',
+        maxWidth: `${logicalW}px`, 
+        aspectRatio: `${logicalW} / ${logicalH}`
+      }}
     >
-      <svg 
-        width={cloudWidth} 
-        height={cloudHeight} 
-        viewBox="0 0 280 180"
-        className="drop-shadow-lg"
-      >
+      {/* SVG裁剪路径定义 */}
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
         <defs>
-          {/* 云朵形状路径 */}
-          <clipPath id="cloudClip">
-            <path d="
-              M 50 140
-              Q 20 140 20 110
-              Q 20 80 50 80
-              Q 50 40 100 40
-              Q 120 20 160 30
-              Q 200 10 230 50
-              Q 270 50 260 90
-              Q 280 110 250 140
-              Z
-            " />
+          <clipPath id="cloudClipPath" clipPathUnits="userSpaceOnUse" transform={`scale(${logicalW / originalW})`}>
+            <path d={cloudPath} transform="translate(-26, -38)" />
           </clipPath>
-          
-          {/* 液体波浪渐变 */}
-          <linearGradient id="liquidGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={colors.dark} stopOpacity="0.9" />
-            <stop offset="100%" stopColor={colors.light} stopOpacity="0.95" />
-          </linearGradient>
-          
-          {/* 波浪动画 */}
-          <pattern id="wavePattern" x="0" y="0" width="200" height="20" patternUnits="userSpaceOnUse">
-            <path 
-              d="M 0 10 Q 25 0 50 10 Q 75 20 100 10 Q 125 0 150 10 Q 175 20 200 10 L 200 30 L 0 30 Z" 
-              fill="url(#liquidGradient)"
-            >
-              <animate 
-                attributeName="d" 
-                values="
-                  M 0 10 Q 25 0 50 10 Q 75 20 100 10 Q 125 0 150 10 Q 175 20 200 10 L 200 30 L 0 30 Z;
-                  M 0 10 Q 25 20 50 10 Q 75 0 100 10 Q 125 20 150 10 Q 175 0 200 10 L 200 30 L 0 30 Z;
-                  M 0 10 Q 25 0 50 10 Q 75 20 100 10 Q 125 0 150 10 Q 175 20 200 10 L 200 30 L 0 30 Z
-                "
-                dur="3s"
-                repeatCount="indefinite"
-              />
-            </path>
-          </pattern>
         </defs>
-        
-        {/* 云朵背景 - 白色 */}
+      </svg>
+
+      {/* 背景层 - 使用设计系统灰色 */}
+      <svg 
+        className="absolute inset-0" 
+        width="100%"
+        height="100%"
+        viewBox="26 38 308 224"
+        preserveAspectRatio="xMidYMid meet"
+      >
         <path 
-          d="
-            M 50 140
-            Q 20 140 20 110
-            Q 20 80 50 80
-            Q 50 40 100 40
-            Q 120 20 160 30
-            Q 200 10 230 50
-            Q 270 50 260 90
-            Q 280 110 250 140
-            Z
-          "
-          fill="white"
-          stroke="#e0f2fe"
-          strokeWidth="2"
-        />
-        
-        {/* 液体层 - 使用 clipPath 裁剪 */}
-        <g clipPath="url(#cloudClip)">
-          {/* 液体主体 - 从底部填充到指定高度 */}
-          <rect 
-            x="0" 
-            y={180 - liquidHeight} 
-            width="280" 
-            height={liquidHeight + 20}
-            fill="url(#liquidGradient)"
-          />
-          {/* 波浪顶部 */}
-          {percentage > 0 && percentage < 100 && (
-            <rect 
-              x="-50" 
-              y={180 - liquidHeight - 15} 
-              width="380" 
-              height="25"
-              fill="url(#wavePattern)"
-            >
-              <animate 
-                attributeName="x" 
-                values="-50;-250;-50" 
-                dur="8s" 
-                repeatCount="indefinite"
-              />
-            </rect>
-          )}
-        </g>
-        
-        {/* 云朵边框（再画一次保证边缘清晰） */}
-        <path 
-          d="
-            M 50 140
-            Q 20 140 20 110
-            Q 20 80 50 80
-            Q 50 40 100 40
-            Q 120 20 160 30
-            Q 200 10 230 50
-            Q 270 50 260 90
-            Q 280 110 250 140
-            Z
-          "
-          fill="none"
-          stroke="#e0f2fe"
-          strokeWidth="2"
+          d={cloudPath} 
+          fill="#F3F4F6"  /* gray-100 */
         />
       </svg>
-      
-      {/* 金额显示 */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span 
-          className="text-4xl font-bold"
-          style={{ color: remaining < 0 ? '#ef4444' : '#0891b2' }}
-        >
-          ¥{Math.abs(remaining).toLocaleString()}
-        </span>
-        <span className="text-sm text-gray-400 mt-1">
-          {remaining < 0 ? '已超支' : '点击记账'}
-        </span>
+
+      {/* 液体Canvas层 */}
+      <div 
+        className="absolute inset-0 overflow-hidden"
+        style={{
+          clipPath: "url(#cloudClipPath)",
+          WebkitClipPath: "url(#cloudClipPath)"
+        }}
+      >
+        <canvas 
+          ref={canvasRef} 
+          style={{ 
+            width: '100%', 
+            height: '100%'
+          }} 
+        />
       </div>
     </div>
   );

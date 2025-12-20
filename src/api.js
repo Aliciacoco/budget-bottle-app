@@ -524,7 +524,8 @@ export const getWishes = async () => {
       id: wish.id,
       description: wish.get('description'),
       amount: wish.get('amount'),
-      image: wish.get('image'),
+      image: wish.get('image') || null,
+      icon: wish.get('icon') || 'star',  // 新增 icon 字段，默认为 star
       fulfilled: wish.get('fulfilled') || false,
       createdAt: wish.get('createdAt')
     }));
@@ -540,7 +541,7 @@ export const getWishes = async () => {
   }
 };
 
-export const createWish = async (description, amount, image, fulfilled = false) => {
+export const createWish = async (description, amount, image, fulfilled = false, icon = 'star') => {
   try {
     const Wish = AV.Object.extend('Wish');
     const wish = new Wish();
@@ -548,19 +549,25 @@ export const createWish = async (description, amount, image, fulfilled = false) 
     wish.set('description', description);
     wish.set('amount', amount);
     wish.set('fulfilled', fulfilled);
-    if (image) wish.set('image', image);
+    wish.set('icon', icon || 'star');  // 新增 icon 字段
+    if (image) {
+      wish.set('image', image);
+    } else {
+      wish.unset('image');  // 如果没有图片，清除该字段
+    }
     setPublicACL(wish);
     
     await wish.save();
     
-    console.log('✅ 成功创建愿望:', description);
+    console.log('✅ 成功创建愿望:', description, '图标:', icon);
     return {
       success: true,
       data: {
         id: wish.id,
         description: wish.get('description'),
         amount: wish.get('amount'),
-        image: wish.get('image'),
+        image: wish.get('image') || null,
+        icon: wish.get('icon') || 'star',
         fulfilled: wish.get('fulfilled')
       }
     };
@@ -570,26 +577,32 @@ export const createWish = async (description, amount, image, fulfilled = false) 
   }
 };
 
-export const updateWish = async (wishId, description, amount, image, fulfilled = false) => {
+export const updateWish = async (wishId, description, amount, image, fulfilled = false, icon = 'star') => {
   try {
     const query = new AV.Query('Wish');
     const wish = await query.get(wishId);
     
     wish.set('description', description);
     wish.set('amount', amount);
-    wish.set('image', image);
     wish.set('fulfilled', fulfilled);
+    wish.set('icon', icon || 'star');  // 新增 icon 字段
+    if (image) {
+      wish.set('image', image);
+    } else {
+      wish.unset('image');  // 如果没有图片，清除该字段
+    }
     
     await wish.save();
     
-    console.log('✅ 成功更新愿望:', wishId);
+    console.log('✅ 成功更新愿望:', wishId, '图标:', icon);
     return {
       success: true,
       data: {
         id: wish.id,
         description: wish.get('description'),
         amount: wish.get('amount'),
-        image: wish.get('image'),
+        image: wish.get('image') || null,
+        icon: wish.get('icon') || 'star',
         fulfilled: wish.get('fulfilled')
       }
     };

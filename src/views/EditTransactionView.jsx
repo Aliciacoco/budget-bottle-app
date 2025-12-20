@@ -1,9 +1,19 @@
-//编辑消费页
+// 编辑消费页面 - 使用设计系统优化
 
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import { updateTransaction, deleteTransaction } from '../api';
-import ConfirmModal from '../components/ConfirmModal';
+
+// 导入设计系统组件
+import { 
+  PageContainer,
+  DuoButton,
+  DuoInput,
+  IconButton,
+  ConfirmModal,
+  LoadingOverlay,
+  ContentArea
+} from '../components/design-system';
 
 const EditTransactionView = ({ 
   editingTransaction, 
@@ -17,102 +27,159 @@ const EditTransactionView = ({
   const [description, setDescription] = useState(editingTransaction?.description || '');
   const [date, setDate] = useState(editingTransaction?.date?.replace(/\//g, '-') || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   if (!editingTransaction) return null;
 
   const handleSubmit = async () => {
     if (!amount) return;
-    const result = await updateTransaction(
-      editingTransaction.id, 
-      weekInfo.weekKey, 
-      parseFloat(amount), 
-      description, 
-      date.replace(/-/g, '/')
-    );
-    if (result.success) {
-      setTransactions(transactions.map(t => t.id === editingTransaction.id ? result.data : t));
-      setViewingTransactions(viewingTransactions.map(t => t.id === editingTransaction.id ? result.data : t));
-      window.history.back();
-    } else { 
-      alert('保存失败: ' + result.error); 
+    setIsLoading(true);
+    try {
+      const result = await updateTransaction(
+        editingTransaction.id, 
+        weekInfo.weekKey, 
+        parseFloat(amount), 
+        description, 
+        date.replace(/-/g, '/')
+      );
+      if (result.success) {
+        setTransactions(transactions.map(t => t.id === editingTransaction.id ? result.data : t));
+        setViewingTransactions(viewingTransactions.map(t => t.id === editingTransaction.id ? result.data : t));
+        window.history.back();
+      } else { 
+        alert('保存失败: ' + result.error); 
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDelete = async () => {
-    const result = await deleteTransaction(editingTransaction.id);
-    if (result.success) {
-      setTransactions(transactions.filter(t => t.id !== editingTransaction.id));
-      setViewingTransactions(viewingTransactions.filter(t => t.id !== editingTransaction.id));
-      window.history.back();
-    } else { 
-      alert('删除失败: ' + result.error); 
+    setShowDeleteConfirm(false);
+    setIsLoading(true);
+    try {
+      const result = await deleteTransaction(editingTransaction.id);
+      if (result.success) {
+        setTransactions(transactions.filter(t => t.id !== editingTransaction.id));
+        setViewingTransactions(viewingTransactions.filter(t => t.id !== editingTransaction.id));
+        window.history.back();
+      } else { 
+        alert('删除失败: ' + result.error); 
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-2xl mx-auto">
-        <button onClick={() => window.history.back()} className="flex items-center gap-2 text-gray-600 mb-6 active:scale-95">
-          <ArrowLeft size={20} />返回
-        </button>
-        <h1 className="text-2xl font-bold text-gray-800 mb-8">编辑消费</h1>
-        <div className="bg-white rounded-2xl p-6 space-y-6">
+    <PageContainer bg="gray">
+      {/* 引入 M PLUS Rounded 1c 字体 */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
+        .font-rounded {
+          font-family: 'M PLUS Rounded 1c', sans-serif;
+        }
+      `}</style>
+
+      {/* 固定透明导航栏 - 只有返回按钮 */}
+      <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
+        <div className="flex items-center justify-between max-w-lg mx-auto">
+          <button 
+            onClick={() => window.history.back()}
+            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
+          >
+            <ArrowLeft size={24} strokeWidth={2.5} />
+          </button>
+        </div>
+      </div>
+
+      {/* 主内容区 */}
+      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
+        
+        {/* 页面标题 */}
+        <div className="text-center mb-2">
+          <h1 className="text-2xl font-extrabold text-gray-800">编辑消费</h1>
+          <p className="text-gray-400 font-medium text-sm mt-1">修改这笔消费记录</p>
+        </div>
+
+        {/* 表单卡片 */}
+        <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
+          
+          {/* 金额输入 - 突出显示 */}
           <div>
-            <label className="block text-gray-600 mb-2">日期</label>
-            <input 
-              type="date" 
-              value={date} 
-              onChange={(e) => setDate(e.target.value)} 
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-gray-400 focus:outline-none" 
-            />
-          </div>
-          <div>
-            <label className="block text-gray-600 mb-2">金额</label>
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">金额</label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl text-gray-400">¥</span>
+              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl text-gray-300 font-bold">¥</span>
               <input 
                 type="number" 
                 value={amount} 
                 onChange={(e) => setAmount(e.target.value)} 
-                className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl text-2xl font-bold focus:border-gray-400 focus:outline-none" 
+                placeholder="0"
+                className="w-full pl-12 pr-4 py-5 bg-gray-100 border-2 border-gray-200 rounded-2xl text-3xl font-extrabold text-gray-700 font-rounded focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
               />
             </div>
           </div>
+          
+          {/* 备注输入 */}
           <div>
-            <label className="block text-gray-600 mb-2">备注</label>
-            <input 
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">备注</label>
+            <DuoInput
               type="text" 
               value={description} 
               onChange={(e) => setDescription(e.target.value)} 
-              placeholder="例如：超市、外卖..." 
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-gray-400 focus:outline-none" 
+              placeholder="例如：超市、外卖..."
             />
           </div>
-          <div className="flex gap-3">
-            <button 
-              onClick={handleSubmit} 
-              disabled={!amount} 
-              className="flex-1 py-4 bg-gray-800 text-white rounded-xl font-medium disabled:bg-gray-300 active:scale-95"
-            >
-              保存
-            </button>
-            <button 
-              onClick={() => setShowDeleteConfirm(true)} 
-              className="px-6 py-4 bg-red-500 text-white rounded-xl font-medium active:scale-95"
-            >
-              删除
-            </button>
+          
+          {/* 日期选择 */}
+          <div>
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">日期</label>
+            <input 
+              type="date" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+              className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-3 font-bold text-gray-700 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+              style={{ colorScheme: 'light' }}
+            />
           </div>
         </div>
+
+        {/* 操作按钮 */}
+        <div className="space-y-3">
+          <DuoButton 
+            onClick={handleSubmit}
+            disabled={!amount || isLoading}
+            fullWidth
+            size="lg"
+          >
+            {isLoading ? '保存中...' : '保存修改'}
+          </DuoButton>
+          
+          <DuoButton 
+            onClick={() => setShowDeleteConfirm(true)}
+            variant="danger"
+            fullWidth
+            size="lg"
+            icon={Trash2}
+          >
+            删除这笔消费
+          </DuoButton>
+        </div>
       </div>
+
+      {/* 删除确认弹窗 */}
       <ConfirmModal 
         isOpen={showDeleteConfirm} 
         title="删除消费记录" 
         message="确定要删除这条消费记录吗？此操作无法撤销。" 
         onConfirm={handleDelete} 
-        onCancel={() => setShowDeleteConfirm(false)} 
+        onCancel={() => setShowDeleteConfirm(false)}
+        confirmText="删除"
+        confirmVariant="danger"
       />
-    </div>
+      
+      <LoadingOverlay isLoading={isLoading} />
+    </PageContainer>
   );
 };
 
