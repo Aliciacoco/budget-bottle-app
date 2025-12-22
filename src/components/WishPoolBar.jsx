@@ -1,5 +1,5 @@
 // WishPoolBar.jsx - 心愿池组件
-// 修复：1. 图标显示 2. 金额精度
+// 支持显示图标或用户上传的图片
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ChevronRight, Check } from 'lucide-react';
@@ -14,7 +14,7 @@ const globalBallPositionsCache = {
 };
 
 // 设计系统颜色
-const POOL_COLOR = '#06B6D4';  // cyan-500
+const POOL_COLOR = '#00BFDC';  // cyan-500
 
 // 金额格式化（修复精度问题）
 const formatAmount = (amount) => {
@@ -132,7 +132,7 @@ const WishPoolBar = ({
         .map(pos => {
           const wish = allItems.find(w => w.id === pos.id);
           if (wish) {
-            return { ...pos, fulfilled: wish.fulfilled || false, icon: wish.icon };
+            return { ...pos, fulfilled: wish.fulfilled || false, icon: wish.icon, image: wish.image };
           }
           return null;
         })
@@ -149,7 +149,8 @@ const WishPoolBar = ({
           vy: 0,
           settled: false,
           fulfilled: item.fulfilled || false,
-          icon: item.icon
+          icon: item.icon,
+          image: item.image
         });
       });
       
@@ -169,7 +170,8 @@ const WishPoolBar = ({
         vy: 0,
         settled: false,
         fulfilled: item.fulfilled || false,
-        icon: item.icon
+        icon: item.icon,
+        image: item.image
       };
     });
     
@@ -471,6 +473,7 @@ const WishPoolBar = ({
           const wish = wishes.find(w => w.id === ball.id);
           if (!wish) return null;
           
+          const hasImage = wish.image;
           const iconKey = wish.icon || 'ball1';
           const iconConfig = getWishIcon(iconKey);
           const IconComponent = iconConfig.icon;
@@ -478,7 +481,7 @@ const WishPoolBar = ({
           return (
             <div 
               key={ball.id} 
-              className={`absolute rounded-full flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-transform ${ball.fulfilled ? 'ring-2 ring-green-400' : ''}`}
+              className={`absolute rounded-full flex items-center justify-center overflow-hidden border-2 border-white/40 bg-white/40 backdrop-blur-sm cursor-pointer active:scale-95 transition-transform ${ball.fulfilled ? 'ring-2 ring-green-400' : ''}`}
               style={{ 
                 left: `${ball.x}px`, 
                 top: `${ball.y}px`,
@@ -491,10 +494,22 @@ const WishPoolBar = ({
                 onWishClick && onWishClick(wish); 
               }}
             >
-              {/* 自定义 SVG 图标 - 直接渲染组件 */}
-              <div className="w-10 h-10">
-                <IconComponent className="w-full h-full" />
-              </div>
+              {hasImage ? (
+                /* 显示用户上传的图片 */
+                <img 
+                  src={wish.image} 
+                  alt={wish.description}
+                  className="w-full h-full object-cover"
+                  style={{
+                    borderRadius: '50%'
+                  }}
+                />
+              ) : (
+                /* 显示自定义 SVG 图标 */
+                <div className="w-10 h-10">
+                  <IconComponent className="w-full h-full" />
+                </div>
+              )}
               
               {ball.fulfilled && (
                 <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center rounded-full">

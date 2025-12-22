@@ -1,5 +1,5 @@
 // WishPoolDetailView.jsx - 心愿池详情页
-// 修复：1. 图标显示 2. 金额精度
+// 支持显示图标或用户上传的图片
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Check, History, ArrowLeft, Droplets, Sparkles, Waves } from 'lucide-react';
@@ -29,6 +29,7 @@ const WishCard = ({ wish, currentAmount, onClick, isFulfilled = false }) => {
   if (isFulfilled) barColor = 'bg-gray-300';
 
   // 获取图标
+  const hasImage = wish.image;
   const iconConfig = getWishIcon(wish.icon || 'ball1');
   const IconComponent = iconConfig.icon;
 
@@ -40,13 +41,21 @@ const WishCard = ({ wish, currentAmount, onClick, isFulfilled = false }) => {
       {/* 主卡片区域 */}
       <div className="relative z-10 bg-white rounded-t-3xl rounded-b-lg p-5 shadow-sm flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* 图标 */}
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+          {/* 图标/图片 */}
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden ${
             isFulfilled ? 'bg-gray-100' : 'bg-cyan-50'
           }`}>
-            <div className="w-9 h-9">
-              <IconComponent className="w-full h-full" />
-            </div>
+            {hasImage ? (
+              <img 
+                src={wish.image} 
+                alt={wish.description}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-9 h-9">
+                <IconComponent className="w-full h-full" />
+              </div>
+            )}
           </div>
           
           {/* 标题和价格 */}
@@ -166,6 +175,7 @@ const WishPoolDetailView = ({
           >
             <ArrowLeft size={24} strokeWidth={2.5} />
           </button>
+          {/* 历史记录按钮 */}
           <button 
             onClick={() => setShowHistoryModal(true)}
             className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
@@ -275,6 +285,13 @@ const WishPoolDetailView = ({
         onClose={() => setShowHistoryModal(false)}
         title="水位变动记录"
       >
+        {/* 规则说明 - 小字 */}
+        <div className="mb-5 p-4 bg-gray-50 rounded-2xl">
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-500 font-medium">规则说明：</span>每周自动结算预算，本周预算 - 本周支出 = 节省的钱，节省的钱自动流入心愿池，累积金额可兑换心愿清单中的物品。
+          </p>
+        </div>
+        
         {/* 统计卡片 */}
         <div className="flex gap-3 mb-6">
           <div className="flex-1 bg-cyan-50 rounded-2xl p-4 text-center border-2 border-cyan-100">

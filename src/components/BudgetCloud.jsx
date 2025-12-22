@@ -1,10 +1,10 @@
 // BudgetCloud.jsx - 云朵组件
-// 使用设计系统优化
+// 修复：水位显示问题 - 100%时应该填满云朵
 
 import React, { useEffect, useRef } from 'react';
 
 // 设计系统颜色
-export const CLOUD_COLOR = '#06B6D4';  // cyan-500
+export const CLOUD_COLOR = '#00BFDC';  // cyan-500
 
 const BudgetCloud = ({ remaining, total, spent, onClick }) => {
   const canvasRef = useRef(null);
@@ -12,9 +12,10 @@ const BudgetCloud = ({ remaining, total, spent, onClick }) => {
   // 原始SVG云朵路径边界: x: 26-334 (宽308), y: 38-262 (高224)
   const originalW = 308;
   const originalH = 224;
-  const logicalW = 280;
+  const logicalW = 240;
   const logicalH = Math.round(logicalW * (originalH / originalW));
 
+  // 修复：确保 percentage 计算正确
   const percentage = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
 
   // 固定颜色
@@ -37,7 +38,10 @@ const BudgetCloud = ({ remaining, total, spent, onClick }) => {
     const amplitude = 4;
     let currentH = percentage;
 
-    const C_TOP = 0.35;
+    // 修复：调整水位范围，让100%时水位能到达云朵顶部
+    // 云朵顶部大约在 Canvas 的 5% 位置（因为云朵形状顶部较窄）
+    // 云朵底部大约在 Canvas 的 95% 位置
+    const C_TOP = 0.03;   // 修复：从 0.35 改为 0.05，让水位可以到达顶部
     const C_BOT = 0.95;
 
     // 气泡设置

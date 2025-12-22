@@ -229,19 +229,19 @@ const SpecialBudgetDetailView = ({
               <div className="text-center px-2">
                 <p className="text-white/60 text-xs font-bold mb-2">预算</p>
                 <p className="text-lg font-extrabold font-rounded text-white">
-                  ¥{totalBudget.toLocaleString()}
+                  ¥{Math.floor(totalBudget).toLocaleString()}
                 </p>
               </div>
               <div className="text-center px-2">
                 <p className="text-white/60 text-xs font-bold mb-2">已花</p>
                 <p className="text-lg font-extrabold font-rounded text-amber-200">
-                  ¥{totalActual.toLocaleString()}
+                  ¥{Math.floor(totalActual).toLocaleString()}
                 </p>
               </div>
               <div className="text-center px-2">
                 <p className="text-white/60 text-xs font-bold mb-2">剩余</p>
                 <p className={`text-lg font-extrabold font-rounded ${remaining < 0 ? 'text-red-300' : 'text-green-300'}`}>
-                  ¥{remaining.toLocaleString()}
+                  ¥{Math.floor(remaining).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -301,7 +301,7 @@ const SpecialBudgetDetailView = ({
                     
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400 font-rounded">
-                        已花 ¥{(item.actualAmount || 0).toLocaleString()} / 预算 ¥{(item.budgetAmount || 0).toLocaleString()}
+                        ¥{(item.actualAmount || 0).toLocaleString()} / ¥{(item.budgetAmount || 0).toLocaleString()}
                       </span>
                       <span className={`font-bold font-rounded ${itemRemaining < 0 ? 'text-red-500' : 'text-green-500'}`}>
                         {itemRemaining >= 0 ? '剩余' : '超支'} ¥{Math.abs(itemRemaining).toLocaleString()}

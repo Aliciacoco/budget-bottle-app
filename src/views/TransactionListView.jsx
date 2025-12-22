@@ -1,6 +1,7 @@
-// 交易记录列表视图 - 新设计（灰色背景 + 透明固定导航栏）
+// TransactionListView.jsx - 交易记录列表视图
+// 修复：1. 周切换功能 2. ISO周号显示 3. 箭头和日期在一个按钮中
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Edit2, Calendar, ArrowLeft } from 'lucide-react';
 import { getWeeklyBudget, getTransactions, saveWeeklyBudget, createTransaction } from '../api';
 import { loadFromCache, saveToCache, formatDate, formatShortDate, getWeekInfo } from '../utils/helpers';
@@ -9,9 +10,6 @@ import Calculator from '../components/CalculatorModal';
 // 导入设计系统组件
 import { 
   PageContainer, 
-  DuoCard,
-  IconButton,
-  EmptyState,
   LoadingOverlay
 } from '../components/design-system';
 
@@ -54,6 +52,50 @@ const BudgetCloud = ({ remaining, total, hasBudget }) => {
   );
 };
 
+// --- 紧凑日期格式：12.22 ---
+const formatCompactDate = (date) => {
+  const d = new Date(date);
+  return `${d.getMonth() + 1}.${d.getDate()}`;
+};
+
+// --- 周切换器组件（箭头和日期在一个按钮中）---
+const WeekSelector = ({ weekInfo, onPrev, onNext, canGoNext, isLoading }) => {
+  const dateRangeText = `${formatCompactDate(weekInfo.weekStart)} - ${formatCompactDate(weekInfo.weekEnd)}`;
+  
+  return (
+    <div className="bg-white rounded-2xl shadow-sm flex items-center overflow-hidden">
+      {/* 左箭头 */}
+      <button 
+        onClick={onPrev}
+        disabled={isLoading}
+        className="px-3 py-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-all disabled:opacity-50 border-r border-gray-100"
+      >
+        <ChevronLeft size={20} strokeWidth={2.5} />
+      </button>
+      
+      {/* 日期范围 */}
+      <div className="px-4 py-2.5">
+        <span className="text-sm font-extrabold text-gray-700">
+          {dateRangeText}
+        </span>
+      </div>
+      
+      {/* 右箭头 */}
+      <button 
+        onClick={onNext}
+        disabled={!canGoNext || isLoading}
+        className={`px-3 py-2.5 transition-all border-l border-gray-100 ${
+          canGoNext && !isLoading 
+            ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 active:bg-gray-100' 
+            : 'text-gray-200 cursor-not-allowed'
+        }`}
+      >
+        <ChevronRight size={20} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+};
+
 const TransactionListView = ({
   weekInfo,
   weeklyBudget,
@@ -70,6 +112,14 @@ const TransactionListView = ({
   const [showBudgetCalculator, setShowBudgetCalculator] = useState(false);
   const [showExpenseCalculator, setShowExpenseCalculator] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 同步父组件的数据变化
+  useEffect(() => {
+    if (viewingWeekInfo.weekKey === weekInfo.weekKey) {
+      setViewingWeekBudget(weeklyBudget);
+      setViewingTransactions(transactions);
+    }
+  }, [weeklyBudget, transactions, weekInfo.weekKey, viewingWeekInfo.weekKey]);
 
   const viewingWeeklySpent = useMemo(() => 
     viewingTransactions.reduce((sum, t) => sum + t.amount, 0), 
@@ -109,6 +159,7 @@ const TransactionListView = ({
   const loadWeekData = async (targetWeekInfo) => {
     setIsLoadingWeek(true);
     try {
+      // 如果是当前周，使用父组件的数据
       if (targetWeekInfo.weekKey === weekInfo.weekKey) {
         setViewingWeekBudget(weeklyBudget);
         setViewingTransactions(transactions);
@@ -116,14 +167,27 @@ const TransactionListView = ({
         return;
       }
       
+      // 否则从服务器加载
       const [budgetResult, transResult] = await Promise.all([
         getWeeklyBudget(targetWeekInfo.weekKey),
         getTransactions(targetWeekInfo.weekKey)
       ]);
-      if (budgetResult.success) setViewingWeekBudget(budgetResult.data);
-      if (transResult.success) setViewingTransactions(transResult.data);
+      
+      if (budgetResult.success) {
+        setViewingWeekBudget(budgetResult.data);
+      } else {
+        setViewingWeekBudget(null);
+      }
+      
+      if (transResult.success) {
+        setViewingTransactions(transResult.data);
+      } else {
+        setViewingTransactions([]);
+      }
     } catch (error) {
       console.error('加载周数据失败:', error);
+      setViewingWeekBudget(null);
+      setViewingTransactions([]);
     } finally {
       setIsLoadingWeek(false);
     }
@@ -203,50 +267,43 @@ const TransactionListView = ({
   return (
     <PageContainer bg="gray" className="relative pb-8">
       {/* 固定透明导航栏 */}
-      <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
+      <div className="fixed top-0 left-0 right-0 z-20 px-4 pt-4 pb-2 pointer-events-none">
         <div className="flex items-center justify-between max-w-lg mx-auto">
+          {/* 左侧：返回按钮 */}
           <button 
             onClick={() => window.history.back()}
             className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
           >
             <ArrowLeft size={24} strokeWidth={2.5} />
           </button>
+          
+          {/* 右侧：日期范围选择器（箭头和日期在一个按钮中） */}
+          <div className="pointer-events-auto">
+            <WeekSelector 
+              weekInfo={viewingWeekInfo}
+              onPrev={() => changeWeek('prev')}
+              onNext={() => changeWeek('next')}
+              canGoNext={canGoNext()}
+              isLoading={isLoadingWeek}
+            />
+          </div>
         </div>
       </div>
 
-      {/* 顶部内容区 - 需要留出导航栏空间 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-5">
+      {/* 顶部内容区 */}
+      <div className="pt-20 px-6 max-w-lg mx-auto space-y-4">
         
-        {/* 周选择器 */}
-        <div className="bg-white rounded-3xl p-4 flex items-center justify-between shadow-sm">
-          <button 
-            onClick={() => changeWeek('prev')}
-            className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 active:scale-95 transition-all"
-          >
-            <ChevronLeft size={24} strokeWidth={2.5} />
-          </button>
-          
-          <div className="text-center">
-            <h2 className="text-lg font-extrabold text-gray-700 flex items-center justify-center gap-2">
-              {viewingWeekInfo.year}年 {viewingWeekInfo.month}月
-              {!isCurrentWeek && (
-                <span className="text-xs bg-cyan-100 text-cyan-600 px-2 py-0.5 rounded-full font-bold">历史</span>
-              )}
-            </h2>
-            <p className="text-sm text-gray-400 font-bold mt-1">
-              第 {viewingWeekInfo.weekNumber} 周 · {formatShortDate(viewingWeekInfo.weekStart)} - {formatShortDate(viewingWeekInfo.weekEnd)}
-            </p>
+        {/* 周标签胶囊 - 显示ISO年周号 */}
+        <div className="flex justify-center">
+          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+            isCurrentWeek 
+              ? 'bg-cyan-100 text-cyan-600' 
+              : 'bg-amber-100 text-amber-600'
+          }`}>
+            <span>{viewingWeekInfo.isoYear || viewingWeekInfo.year}年</span>
+            <span>第{viewingWeekInfo.isoWeekNumber || viewingWeekInfo.weekNumber}周</span>
+            {!isCurrentWeek && <span>· 历史</span>}
           </div>
-          
-          <button 
-            onClick={() => changeWeek('next')}
-            disabled={!canGoNext()}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
-              canGoNext() ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-gray-50 text-gray-200 cursor-not-allowed'
-            }`}
-          >
-            <ChevronRight size={24} strokeWidth={2.5} />
-          </button>
         </div>
 
         {/* 预算概览卡片 */}

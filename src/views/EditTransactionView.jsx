@@ -1,4 +1,5 @@
-// 编辑消费页面 - 使用设计系统优化
+// EditTransactionView.jsx - 编辑消费页面
+// 修复：删除按钮移到页面右上角
 
 import React, { useState } from 'react';
 import { ArrowLeft, Trash2 } from 'lucide-react';
@@ -7,12 +8,11 @@ import { updateTransaction, deleteTransaction } from '../api';
 // 导入设计系统组件
 import { 
   PageContainer,
+  TransparentNavBar,
   DuoButton,
   DuoInput,
-  IconButton,
   ConfirmModal,
-  LoadingOverlay,
-  ContentArea
+  LoadingOverlay
 } from '../components/design-system';
 
 const EditTransactionView = ({ 
@@ -73,28 +73,16 @@ const EditTransactionView = ({
 
   return (
     <PageContainer bg="gray">
-      {/* 引入 M PLUS Rounded 1c 字体 */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded {
-          font-family: 'M PLUS Rounded 1c', sans-serif;
-        }
-      `}</style>
-
-      {/* 固定透明导航栏 - 只有返回按钮 */}
-      <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <button 
-            onClick={() => window.history.back()}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
+      {/* 导航栏 - 删除按钮在右上角 */}
+      <TransparentNavBar
+        onBack={() => window.history.back()}
+        rightButtons={[
+          { icon: Trash2, onClick: () => setShowDeleteConfirm(true), variant: 'danger' }
+        ]}
+      />
 
       {/* 主内容区 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
+      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6 pb-8">
         
         {/* 页面标题 */}
         <div className="text-center mb-2">
@@ -144,27 +132,15 @@ const EditTransactionView = ({
           </div>
         </div>
 
-        {/* 操作按钮 */}
-        <div className="space-y-3">
-          <DuoButton 
-            onClick={handleSubmit}
-            disabled={!amount || isLoading}
-            fullWidth
-            size="lg"
-          >
-            {isLoading ? '保存中...' : '保存修改'}
-          </DuoButton>
-          
-          <DuoButton 
-            onClick={() => setShowDeleteConfirm(true)}
-            variant="danger"
-            fullWidth
-            size="lg"
-            icon={Trash2}
-          >
-            删除这笔消费
-          </DuoButton>
-        </div>
+        {/* 保存按钮 */}
+        <DuoButton 
+          onClick={handleSubmit}
+          disabled={!amount || isLoading}
+          fullWidth
+          size="lg"
+        >
+          {isLoading ? '保存中...' : '保存修改'}
+        </DuoButton>
       </div>
 
       {/* 删除确认弹窗 */}

@@ -1,13 +1,15 @@
 // EditFixedExpenseView.jsx - 编辑固定支出页面
-// 修复：日期选择器格式
+// 修复：1. 删除按钮右上角 2. 点击金额打开计算器 3. 金额输入框高度调整
 
 import React, { useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { createFixedExpense, updateFixedExpense, deleteFixedExpense } from '../api';
+import Calculator from '../components/CalculatorModal';
 
 // 导入设计系统组件
 import { 
   PageContainer,
+  TransparentNavBar,
   DuoButton,
   DuoInput,
   ConfirmModal,
@@ -23,9 +25,10 @@ const EditFixedExpenseView = ({
   const isNew = !editingExpense?.id;
   
   const [name, setName] = useState(editingExpense?.name || '');
-  const [amount, setAmount] = useState(editingExpense?.amount?.toString() || '');
+  const [amount, setAmount] = useState(editingExpense?.amount || 0);
   const [expireDate, setExpireDate] = useState(editingExpense?.expireDate || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleBack = () => {
@@ -41,13 +44,12 @@ const EditFixedExpenseView = ({
     
     setIsLoading(true);
     try {
-      const amountNum = parseFloat(amount);
       let result;
       
       if (isNew) {
-        result = await createFixedExpense(name, amountNum, expireDate, true);
+        result = await createFixedExpense(name, amount, expireDate, true);
       } else {
-        result = await updateFixedExpense(editingExpense.id, name, amountNum, expireDate, true);
+        result = await updateFixedExpense(editingExpense.id, name, amount, expireDate, true);
       }
       
       if (result.success) {
@@ -83,30 +85,23 @@ const EditFixedExpenseView = ({
     }
   };
 
+  const handleAmountChange = (newAmount) => {
+    setAmount(newAmount);
+    setShowCalculator(false);
+  };
+
   return (
     <PageContainer bg="gray">
-      {/* 引入 M PLUS Rounded 1c 字体 */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded {
-          font-family: 'M PLUS Rounded 1c', sans-serif;
-        }
-      `}</style>
-
-      {/* 固定透明导航栏 */}
-      <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <button 
-            onClick={handleBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
+      {/* 导航栏 - 编辑模式显示删除按钮在右上角 */}
+      <TransparentNavBar
+        onBack={handleBack}
+        rightButtons={!isNew ? [
+          { icon: Trash2, onClick: () => setShowDeleteConfirm(true), variant: 'danger' }
+        ] : []}
+      />
 
       {/* 主内容区 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
+      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6 pb-8">
         
         {/* 页面标题 */}
         <div className="text-center mb-2">
@@ -130,62 +125,64 @@ const EditFixedExpenseView = ({
               onChange={(e) => setName(e.target.value)} 
               placeholder="例如：房租、水电费..."
               autoFocus={isNew}
+              multiline={true}
             />
           </div>
           
-          {/* 金额输入 */}
+          {/* 金额输入 - 点击打开计算器，高度与普通输入框一致 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">金额</label>
-            <div className="relative">
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl text-gray-300 font-bold">¥</span>
-              <input 
-                type="number" 
-                value={amount} 
-                onChange={(e) => setAmount(e.target.value)} 
-                placeholder="0"
-                className="w-full pl-12 pr-4 py-5 bg-gray-100 border-2 border-gray-200 rounded-2xl text-3xl font-extrabold text-gray-700 font-rounded focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-              />
+            <div 
+              onClick={() => setShowCalculator(true)}
+              className="w-full px-4 py-4 bg-gray-100 border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 active:scale-[0.99] transition-all flex items-center"
+            >
+              <span className="text-xl text-gray-300 font-bold mr-2">¥</span>
+              <span className="text-base font-bold text-gray-700">
+                {amount || 0}
+              </span>
             </div>
           </div>
           
-          {/* 到期日期 - 修复格式问题 */}
+          {/* 到期日期 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">到期日期（可选）</label>
             <input 
               type="date" 
               value={expireDate} 
               onChange={(e) => setExpireDate(e.target.value)} 
-              className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-4 font-bold text-gray-700 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+              className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-4 font-bold text-gray-700 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors text-base"
+              style={{ 
+                colorScheme: 'light',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                minHeight: '56px'
+              }}
             />
             <p className="text-xs text-gray-300 mt-2 ml-1">留空表示无限期</p>
           </div>
         </div>
 
-        {/* 操作按钮 */}
-        <div className="space-y-3">
-          <DuoButton 
-            onClick={handleSave}
-            disabled={!name || !amount || isLoading}
-            fullWidth
-            size="lg"
-          >
-            {isLoading ? '保存中...' : '保存'}
-          </DuoButton>
-          
-          {/* 只有编辑模式才显示删除按钮 */}
-          {!isNew && (
-            <DuoButton 
-              onClick={() => setShowDeleteConfirm(true)}
-              variant="danger"
-              fullWidth
-              size="lg"
-              icon={Trash2}
-            >
-              删除这笔支出
-            </DuoButton>
-          )}
-        </div>
+        {/* 保存按钮 */}
+        <DuoButton 
+          onClick={handleSave}
+          disabled={!name || !amount || isLoading}
+          fullWidth
+          size="lg"
+        >
+          {isLoading ? '保存中...' : '保存'}
+        </DuoButton>
       </div>
+
+      {/* 计算器弹窗 */}
+      {showCalculator && (
+        <Calculator
+          value={amount}
+          onChange={handleAmountChange}
+          onClose={() => setShowCalculator(false)}
+          title="输入金额"
+          showNote={false}
+        />
+      )}
 
       {/* 删除确认弹窗 */}
       <ConfirmModal 

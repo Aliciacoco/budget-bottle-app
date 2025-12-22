@@ -1,12 +1,12 @@
 // src/components/design-system.jsx - 精简版设计系统组件
-// 只保留实际使用的组件和样式
+// 修复：1. 禁止左右滑动 2. 支持自动增高的输入框
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 
 // ==================== 颜色常量 ====================
 export const colors = {
-  primary: '#06B6D4',
+  primary: '#00BFDC',
   primaryDark: '#0891B2',
   success: '#22C55E',
   danger: '#EF4444',
@@ -29,12 +29,27 @@ export const PageContainer = ({ children, bg = 'white', className = '' }) => {
   const bgClass = bg === 'gray' ? 'bg-gray-50' : 'bg-white';
   
   return (
-    <div className={`min-h-screen ${bgClass} ${className}`}>
-      {/* 字体引入 */}
+    <div className={`min-h-screen ${bgClass} overflow-x-hidden ${className}`}>
+      {/* 字体引入 + 全局禁止左右滑动 + iOS日期选择器修复 */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded {
           font-family: 'M PLUS Rounded 1c', sans-serif;
+        }
+        html, body {
+          overflow-x: hidden;
+          max-width: 100vw;
+        }
+        /* iOS 日期选择器修复 */
+        input[type="date"] {
+          -webkit-appearance: none;
+          appearance: none;
+          min-height: 48px;
+          max-width: 100%;
+          box-sizing: border-box;
+        }
+        input[type="date"]::-webkit-date-and-time-value {
+          text-align: left;
         }
       `}</style>
       {children}
@@ -60,7 +75,7 @@ export const TransparentNavBar = ({
   };
 
   return (
-    <div className={`fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none ${className}`}>
+    <div className={`fixed top-0 left-0 right-0 z-20 px-4 pt-4 pb-2 pointer-events-none ${className}`}>
       <div className="flex items-center justify-between max-w-lg mx-auto">
         {/* 返回按钮 */}
         <button 
@@ -181,8 +196,11 @@ export const DuoInput = ({
   size = 'md',
   disabled = false,
   autoFocus = false,
+  multiline = false,  // 新增：是否自动多行
   className = ''
 }) => {
+  const textareaRef = useRef(null);
+  
   const sizeStyles = {
     sm: 'px-4 py-2 text-sm',
     md: 'px-4 py-4 text-base',
@@ -190,6 +208,14 @@ export const DuoInput = ({
   };
   
   const baseClass = 'w-full bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors';
+  
+  // 自动调整高度
+  useEffect(() => {
+    if (multiline && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [value, multiline]);
   
   if (prefix) {
     return (
@@ -207,6 +233,23 @@ export const DuoInput = ({
           className={`${baseClass} ${sizeStyles[size]} ${size === 'lg' ? 'pl-12 font-rounded' : 'pl-10'} ${className}`}
         />
       </div>
+    );
+  }
+  
+  // 多行自动增高模式
+  if (multiline) {
+    return (
+      <textarea 
+        ref={textareaRef}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        rows={1}
+        className={`${baseClass} ${sizeStyles[size]} resize-none overflow-hidden ${className}`}
+        style={{ minHeight: size === 'lg' ? '68px' : size === 'md' ? '56px' : '40px' }}
+      />
     );
   }
   
@@ -315,7 +358,7 @@ export const Modal = ({
   );
 };
 
-// ==================== 空状态组件 (新增) ====================
+// ==================== 空状态组件 ====================
 export const EmptyState = ({ icon: Icon, message, action }) => (
   <div className="py-12 text-center flex flex-col items-center justify-center">
     <div className="w-16 h-16 mb-4 bg-gray-100 rounded-full flex items-center justify-center">
