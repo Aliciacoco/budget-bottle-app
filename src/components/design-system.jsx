@@ -1,5 +1,5 @@
 // src/components/design-system.jsx - 精简版设计系统组件
-// 修复：1. 禁止左右滑动 2. 支持自动增高的输入框
+// 修复：1. 禁止左右滑动 2. 支持自动增高的输入框 3. 新增统一的金额输入组件
 
 import React, { useRef, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
@@ -196,7 +196,7 @@ export const DuoInput = ({
   size = 'md',
   disabled = false,
   autoFocus = false,
-  multiline = false,  // 新增：是否自动多行
+  multiline = false,  // 是否自动多行
   className = ''
 }) => {
   const textareaRef = useRef(null);
@@ -263,6 +263,54 @@ export const DuoInput = ({
       autoFocus={autoFocus}
       className={`${baseClass} ${sizeStyles[size]} ${className}`}
     />
+  );
+};
+
+// ==================== 金额输入框（统一样式 - 计算器模式） ====================
+// 点击打开计算器弹窗，所有金额输入都使用此组件
+// 默认尺寸与 DuoInput 保持一致
+export const AmountInput = ({
+  value,
+  onClick,           // 点击打开计算器
+  placeholder = '0',
+  size = 'md',       // sm | md | lg （默认 md，与 DuoInput 一致）
+  disabled = false,
+  className = ''
+}) => {
+  // 尺寸配置 - 与 DuoInput 保持一致
+  const sizeConfig = {
+    sm: {
+      container: 'px-4 py-2',
+      prefix: 'text-lg',
+      value: 'text-sm',
+      height: 'min-h-[40px]'
+    },
+    md: {
+      container: 'px-4 py-4',
+      prefix: 'text-xl',
+      value: 'text-base',
+      height: 'min-h-[56px]'
+    },
+    lg: {
+      container: 'px-5 py-5',
+      prefix: 'text-2xl',
+      value: 'text-xl font-rounded',
+      height: 'min-h-[68px]'
+    }
+  };
+  
+  const config = sizeConfig[size];
+  
+  return (
+    <div 
+      onClick={disabled ? undefined : onClick}
+      className={`w-full bg-gray-100 border-2 border-gray-200 rounded-2xl ${config.container} ${config.height} flex items-center transition-colors ${disabled ? 'opacity-50' : 'cursor-pointer hover:bg-gray-50 active:scale-[0.99]'} ${className}`}
+    >
+      <span className={`${config.prefix} text-gray-300 font-bold mr-2`}>¥</span>
+      <span className={`${config.value} font-bold text-gray-700`}>
+        {value || placeholder}
+      </span>
+    </div>
   );
 };
 

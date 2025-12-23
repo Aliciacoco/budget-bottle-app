@@ -465,7 +465,7 @@ const DraggableBudgetIcons = ({ budgets = [], onBudgetClick, cloudRef, setSpecia
             style={{
               left: `${pixelPos.x}px`,
               top: `${pixelPos.y}px`,
-              zIndex: isEditing ? 30 : 1,
+              zIndex: isEditing ? 30 : 15,  // 修复：默认 15，高于云朵区域的 z-10
             }}
             onTouchStart={(e) => handleTouchStart(e, budget.id)}
             onTouchEnd={(e) => handleTouchEnd(e, budget)}

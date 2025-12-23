@@ -5,13 +5,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CloudPool · 周预算工具</title>
-  <link rel="icon" href="/public/favicon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/public/apple-touch-icon.png?v=2" />
+
+  <!-- Favicon -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+  <!-- Apple Touch Icon - 注意：不要带 /public/ 前缀 -->
+  <!-- Vite 构建时会将 public 文件夹内容复制到根目录 -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+  <!-- 添加 manifest 以增强 PWA 支持 -->
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- PWA meta 标签 - 使用新标准 -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="CloudPool" />
+
+  <!-- 主题色 -->
+  <meta name="theme-color" content="white" />
+
+  <!-- 字体预加载 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap"
     rel="stylesheet">
-    
 </head>
 
 <body>

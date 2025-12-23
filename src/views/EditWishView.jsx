@@ -1,11 +1,15 @@
 // EditWishView.jsx - 查看/编辑心愿页面
-// 支持图标选择或图片上传
+// 功能：金额计算器、Mixed Content 修复、心愿实现庆祝动画
 
 import React, { useState, useRef } from 'react';
 import { Edit2, Trash2, Heart, Undo2, ImagePlus, Palette, X } from 'lucide-react';
 import AV from '../leancloud';
 import { createWish, updateWish, deleteWish, getWishes, getWishPool, createWishPoolHistory, getWishPoolHistory, deleteWishPoolHistory } from '../api';
 import { WISH_ICONS, getWishIcon, WISH_ICON_KEYS } from '../constants/wishIcons.jsx';
+import Calculator from '../components/CalculatorModal';
+
+// 导入庆祝动画
+import { CelebrationAnimation } from '../components/animations';
 
 // 导入设计系统组件
 import { 
@@ -13,11 +17,18 @@ import {
   TransparentNavBar,
   DuoButton,
   DuoInput,
+  AmountInput,
   Modal,
   ConfirmModal,
   LoadingOverlay,
   ContentArea
 } from '../components/design-system';
+
+// ===== 工具函数：确保 URL 使用 HTTPS =====
+const ensureHttps = (url) => {
+  if (!url) return url;
+  return url.replace(/^http:\/\//i, 'https://');
+};
 
 const EditWishView = ({ 
   editingWish, 
@@ -29,58 +40,67 @@ const EditWishView = ({
   const isNew = !editingWish?.id;
   const [isEditMode, setIsEditMode] = useState(isNew);
   const [description, setDescription] = useState(editingWish?.description || '');
-  const [amount, setAmount] = useState(editingWish?.amount?.toString() || '');
+  const [amount, setAmount] = useState(editingWish?.amount || 0);
   const [selectedIcon, setSelectedIcon] = useState(editingWish?.icon || 'ball1');
   
-  // 图片相关状态
-  const [imageMode, setImageMode] = useState(editingWish?.image ? 'image' : 'icon'); // 'icon' | 'image'
-  const [imageUrl, setImageUrl] = useState(editingWish?.image || '');
-  const [imagePreview, setImagePreview] = useState(editingWish?.image || '');
+  // 图片相关状态 - 确保使用 HTTPS
+  const [imageMode, setImageMode] = useState(editingWish?.image ? 'image' : 'icon');
+  const [imageUrl, setImageUrl] = useState(ensureHttps(editingWish?.image) || '');
+  const [imagePreview, setImagePreview] = useState(ensureHttps(editingWish?.image) || '');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
+  
+  // 计算器状态
+  const [showCalculator, setShowCalculator] = useState(false);
+  
+  // 庆祝动画状态
+  const [showCelebration, setShowCelebration] = useState(false);
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showFulfillConfirm, setShowFulfillConfirm] = useState(false);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const wishAmount = parseFloat(amount || 0);
+  const wishAmount = amount || 0;
   const canFulfill = wishPoolAmount >= wishAmount && wishAmount > 0;
   const isFulfilled = editingWish?.fulfilled || false;
   
   const progressPercent = Math.min((wishPoolAmount / wishAmount) * 100, 100);
   const remainingAmount = Math.max(0, wishAmount - wishPoolAmount);
 
+  // --- 计算器回调 ---
+  const handleAmountChange = (newAmount) => {
+    setAmount(newAmount);
+    setShowCalculator(false);
+  };
+
   // --- 图片上传处理 ---
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // 检查文件类型
     if (!file.type.startsWith('image/')) {
       alert('请选择图片文件');
       return;
     }
     
-    // 检查文件大小（限制 5MB）
     if (file.size > 5 * 1024 * 1024) {
       alert('图片大小不能超过 5MB');
       return;
     }
     
-    // 显示预览
     const reader = new FileReader();
     reader.onload = (e) => {
       setImagePreview(e.target.result);
     };
     reader.readAsDataURL(file);
     
-    // 上传到 LeanCloud
     setIsUploading(true);
     try {
       const avFile = new AV.File(file.name, file);
       const savedFile = await avFile.save();
-      setImageUrl(savedFile.url());
+      const secureUrl = ensureHttps(savedFile.url());
+      setImageUrl(secureUrl);
       setImageMode('image');
     } catch (error) {
       console.error('图片上传失败:', error);
@@ -106,13 +126,13 @@ const EditWishView = ({
     setIsLoading(true);
     try {
       let result;
-      const finalImage = imageMode === 'image' ? imageUrl : null;
+      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       
       if (isNew) {
-        result = await createWish(description, parseFloat(amount), finalImage, false, finalIcon);
+        result = await createWish(description, amount, finalImage, false, finalIcon);
       } else {
-        result = await updateWish(editingWish.id, description, parseFloat(amount), finalImage, isFulfilled, finalIcon);
+        result = await updateWish(editingWish.id, description, amount, finalImage, isFulfilled, finalIcon);
       }
       if (result.success) {
         const wishResult = await getWishes();
@@ -141,7 +161,7 @@ const EditWishView = ({
     try {
       const historyKey = 'WISH-' + editingWish.id + '-' + Date.now();
       await createWishPoolHistory(historyKey, 0, 0, -wishAmount, true, description, editingWish.id);
-      const finalImage = imageMode === 'image' ? imageUrl : null;
+      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       const result = await updateWish(editingWish.id, description, wishAmount, finalImage, true, finalIcon);
       if (result.success) {
@@ -149,9 +169,18 @@ const EditWishView = ({
         if (poolResult.success) setWishPoolAmount(poolResult.data.amount);
         const wishResult = await getWishes();
         if (wishResult.success) setWishes(wishResult.data);
-        window.history.back();
+        
+        // 显示庆祝动画，而不是直接返回
+        setIsLoading(false);
+        setShowCelebration(true);
       }
-    } catch (e) { alert('操作失败'); } finally { setIsLoading(false); }
+    } catch (e) { alert('操作失败'); setIsLoading(false); }
+  };
+  
+  // 庆祝动画结束后返回
+  const handleCelebrationComplete = () => {
+    setShowCelebration(false);
+    window.history.back();
   };
 
   const confirmRevoke = async () => {
@@ -162,7 +191,7 @@ const EditWishView = ({
         const targetRecord = historyResult.data.find(h => h.wishId === editingWish.id && h.isDeduction);
         if (targetRecord) await deleteWishPoolHistory(targetRecord.id);
       }
-      const finalImage = imageMode === 'image' ? imageUrl : null;
+      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       const result = await updateWish(editingWish.id, description, wishAmount, finalImage, false, finalIcon);
       if (result.success) {
@@ -178,12 +207,12 @@ const EditWishView = ({
   // --- 查看模式 ---
   if (!isEditMode && !isNew) {
     const hasImage = editingWish?.image;
+    const secureImageUrl = ensureHttps(editingWish?.image);
     const viewIconConfig = getWishIcon(editingWish?.icon || selectedIcon);
     const IconComponent = viewIconConfig.icon;
     
     return (
       <PageContainer bg="gray">
-        {/* 透明导航栏 */}
         <TransparentNavBar 
           onBack={() => window.history.back()}
           rightButtons={[
@@ -193,13 +222,11 @@ const EditWishView = ({
         />
         
         <ContentArea className="pt-20 max-w-lg mx-auto">
-          {/* 心愿卡片 */}
           <div className="bg-white rounded-3xl overflow-hidden shadow-sm border-b-4 border-gray-200 mb-6">
-            {/* 图标/图片区域 */}
             <div className="aspect-[4/3] w-full bg-gradient-to-br from-cyan-50 to-gray-100 flex items-center justify-center overflow-hidden relative">
               {hasImage ? (
                 <img 
-                  src={editingWish.image} 
+                  src={secureImageUrl}
                   alt={description}
                   className="w-full h-full object-cover"
                 />
@@ -209,12 +236,10 @@ const EditWishView = ({
                 </div>
               )}
               
-              {/* 价格标签 */}
               <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-md text-white px-4 py-2 rounded-xl font-extrabold font-rounded text-lg shadow-lg border-2 border-white/20">
                 ¥{wishAmount.toLocaleString()}
               </div>
               
-              {/* 已实现标记 */}
               {isFulfilled && (
                 <div className="absolute top-4 left-4 bg-amber-400 text-white px-4 py-1.5 rounded-xl font-extrabold text-sm shadow-lg rotate-[-5deg] border-2 border-amber-500">
                   🏆 已达成
@@ -222,13 +247,11 @@ const EditWishView = ({
               )}
             </div>
             
-            {/* 卡片内容 */}
             <div className="p-6">
               <h1 className="text-2xl font-extrabold text-gray-700 leading-tight mb-4">
                 {description}
               </h1>
               
-              {/* 进度条 (仅未实现时) */}
               {!isFulfilled && (
                 <div>
                   <div className="flex justify-between text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">
@@ -237,7 +260,6 @@ const EditWishView = ({
                       {Math.round(progressPercent)}%
                     </span>
                   </div>
-                  {/* 进度条 */}
                   <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all duration-500 ${canFulfill ? 'bg-green-500' : 'bg-cyan-400'}`}
@@ -256,7 +278,6 @@ const EditWishView = ({
             </div>
           </div>
 
-          {/* 底部按钮 */}
           <div className="pb-6">
             {isFulfilled ? (
               <DuoButton 
@@ -283,7 +304,6 @@ const EditWishView = ({
           </div>
         </ContentArea>
 
-        {/* 实现确认弹窗 */}
         <Modal
           isOpen={showFulfillConfirm}
           onClose={() => setShowFulfillConfirm(false)}
@@ -302,7 +322,6 @@ const EditWishView = ({
           </div>
         </Modal>
         
-        {/* 撤销确认弹窗 */}
         <Modal
           isOpen={showRevokeConfirm}
           onClose={() => setShowRevokeConfirm(false)}
@@ -330,6 +349,17 @@ const EditWishView = ({
         />
         
         <LoadingOverlay isLoading={isLoading} />
+        
+        {/* 庆祝动画 */}
+        {showCelebration && (
+          <CelebrationAnimation
+            wishName={description}
+            amount={wishAmount}
+            wishIcon={selectedIcon}
+            wishImage={imageMode === 'image' ? ensureHttps(imageUrl) : null}
+            onComplete={handleCelebrationComplete}
+          />
+        )}
       </PageContainer>
     );
   }
@@ -337,13 +367,11 @@ const EditWishView = ({
   // --- 编辑模式 ---
   return (
     <PageContainer bg="gray">
-      {/* 透明导航栏 */}
       <TransparentNavBar 
         onBack={() => isNew ? window.history.back() : setIsEditMode(false)}
       />
 
       <ContentArea className="pt-20 space-y-6 max-w-lg mx-auto">
-        {/* 页面标题 */}
         <div className="text-center mb-2">
           <h1 className="text-2xl font-extrabold text-gray-800">
             {isNew ? '添加新心愿' : '编辑心愿'}
@@ -353,7 +381,6 @@ const EditWishView = ({
           </p>
         </div>
         
-        {/* 表单卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
           {/* 名称输入 */}
           <div>
@@ -367,22 +394,18 @@ const EditWishView = ({
             />
           </div>
           
-          {/* 金额输入 */}
+          {/* 金额输入 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">需要多少钱</label>
-            <DuoInput 
-              type="number" 
-              prefix="¥"
-              value={amount} 
-              onChange={(e) => setAmount(e.target.value)} 
-              placeholder="0"
+            <AmountInput
+              value={amount}
+              onClick={() => setShowCalculator(true)}
             />
           </div>
         </div>
         
         {/* 图标/图片选择卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-4">
-          {/* 模式切换 */}
           <div className="flex items-center justify-between mb-2">
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs ml-1">选择展示方式</label>
             <div className="flex bg-gray-100 rounded-xl p-1">
@@ -412,7 +435,6 @@ const EditWishView = ({
           </div>
           
           {imageMode === 'icon' ? (
-            /* 图标网格 */
             <div className="grid grid-cols-3 gap-3">
               {WISH_ICON_KEYS.map((key) => {
                 const config = WISH_ICONS[key];
@@ -435,9 +457,7 @@ const EditWishView = ({
               })}
             </div>
           ) : (
-            /* 图片上传区域 */
             <div className="space-y-4">
-              {/* 隐藏的文件输入 */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -447,7 +467,6 @@ const EditWishView = ({
               />
               
               {imagePreview ? (
-                /* 图片预览 */
                 <div className="relative">
                   <div className="aspect-square rounded-2xl overflow-hidden bg-gray-100">
                     <img 
@@ -456,20 +475,17 @@ const EditWishView = ({
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  {/* 删除按钮 */}
                   <button
                     onClick={handleRemoveImage}
                     className="absolute top-3 right-3 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg active:scale-95"
                   >
                     <X size={20} strokeWidth={3} />
                   </button>
-                  {/* 上传中指示 */}
                   {isUploading && (
                     <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center">
                       <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent"></div>
                     </div>
                   )}
-                  {/* 重新选择按钮 */}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading}
@@ -479,7 +495,6 @@ const EditWishView = ({
                   </button>
                 </div>
               ) : (
-                /* 上传按钮 */
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
@@ -505,7 +520,6 @@ const EditWishView = ({
           )}
         </div>
         
-        {/* 保存按钮 */}
         <div className="pb-6">
           <DuoButton 
             onClick={handleSave} 
@@ -517,6 +531,17 @@ const EditWishView = ({
           </DuoButton>
         </div>
       </ContentArea>
+      
+      {/* 计算器弹窗 */}
+      {showCalculator && (
+        <Calculator
+          value={amount}
+          onChange={handleAmountChange}
+          onClose={() => setShowCalculator(false)}
+          title="输入金额"
+          showNote={false}
+        />
+      )}
       
       <LoadingOverlay isLoading={isLoading} />
     </PageContainer>

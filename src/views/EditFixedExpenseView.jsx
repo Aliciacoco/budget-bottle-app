@@ -1,5 +1,5 @@
 // EditFixedExpenseView.jsx - 编辑固定支出页面
-// 修复：1. 删除按钮右上角 2. 点击金额打开计算器 3. 金额输入框高度调整
+// 修复：使用统一的 AmountInput 组件
 
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
   TransparentNavBar,
   DuoButton,
   DuoInput,
+  AmountInput,  // 新增：统一的金额输入组件
   ConfirmModal,
   LoadingOverlay
 } from '../components/design-system';
@@ -129,18 +130,13 @@ const EditFixedExpenseView = ({
             />
           </div>
           
-          {/* 金额输入 - 点击打开计算器，高度与普通输入框一致 */}
+          {/* 金额输入 - 使用统一的 AmountInput 组件（计算器模式） */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">金额</label>
-            <div 
+            <AmountInput
+              value={amount || 0}
               onClick={() => setShowCalculator(true)}
-              className="w-full px-4 py-4 bg-gray-100 border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 active:scale-[0.99] transition-all flex items-center"
-            >
-              <span className="text-xl text-gray-300 font-bold mr-2">¥</span>
-              <span className="text-base font-bold text-gray-700">
-                {amount || 0}
-              </span>
-            </div>
+            />
           </div>
           
           {/* 到期日期 */}

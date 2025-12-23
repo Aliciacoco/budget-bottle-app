@@ -1,14 +1,14 @@
 // EditSpecialBudgetItemView.jsx - 编辑预算明细
-// 修复：1. 删除按钮移到右上角 2. 名称输入支持多行自动增高
+// 修复：所有金额输入使用计算器模式
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { 
   createSpecialBudgetItem, 
   updateSpecialBudgetItem, 
-  deleteSpecialBudgetItem,
-  getSpecialBudgetItems
+  deleteSpecialBudgetItem
 } from '../api';
+import Calculator from '../components/CalculatorModal';
 
 // 导入设计系统组件
 import { 
@@ -16,6 +16,7 @@ import {
   TransparentNavBar,
   DuoButton,
   DuoInput,
+  AmountInput,
   ConfirmModal,
   LoadingOverlay
 } from '../components/design-system';
@@ -29,10 +30,14 @@ const EditSpecialBudgetItemView = ({
   const isEditing = !!editingItem?.id;
   
   const [name, setName] = useState(editingItem?.name || '');
-  const [budgetAmount, setBudgetAmount] = useState(editingItem?.budgetAmount?.toString() || '');
-  const [actualAmount, setActualAmount] = useState(editingItem?.actualAmount?.toString() || '');
+  const [budgetAmount, setBudgetAmount] = useState(editingItem?.budgetAmount || 0);
+  const [actualAmount, setActualAmount] = useState(editingItem?.actualAmount || 0);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
+  // 计算器状态
+  const [showBudgetCalculator, setShowBudgetCalculator] = useState(false);
+  const [showActualCalculator, setShowActualCalculator] = useState(false);
   
   const handleBack = () => {
     if (onBack) {
@@ -55,15 +60,15 @@ const EditSpecialBudgetItemView = ({
         result = await updateSpecialBudgetItem(
           editingItem.id,
           name.trim(),
-          parseFloat(budgetAmount) || 0,
-          parseFloat(actualAmount) || 0
+          budgetAmount || 0,
+          actualAmount || 0
         );
       } else {
         result = await createSpecialBudgetItem(
           budgetId,
           name.trim(),
-          parseFloat(budgetAmount) || 0,
-          parseFloat(actualAmount) || 0
+          budgetAmount || 0,
+          actualAmount || 0
         );
       }
       
@@ -90,6 +95,17 @@ const EditSpecialBudgetItemView = ({
     } finally {
       setIsSaving(false);
     }
+  };
+  
+  // 计算器回调
+  const handleBudgetAmountChange = (newAmount) => {
+    setBudgetAmount(newAmount);
+    setShowBudgetCalculator(false);
+  };
+  
+  const handleActualAmountChange = (newAmount) => {
+    setActualAmount(newAmount);
+    setShowActualCalculator(false);
   };
   
   return (
@@ -132,34 +148,26 @@ const EditSpecialBudgetItemView = ({
             />
           </div>
           
-          {/* 预算金额 */}
+          {/* 预算金额 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               预算金额
             </label>
-            <DuoInput
-              type="number"
+            <AmountInput
               value={budgetAmount}
-              onChange={(e) => setBudgetAmount(e.target.value)}
-              placeholder="0"
-              prefix="¥"
-              size="lg"
+              onClick={() => setShowBudgetCalculator(true)}
             />
             <p className="text-xs text-gray-300 mt-1 ml-1">计划花费的金额</p>
           </div>
           
-          {/* 实际金额 */}
+          {/* 实际金额 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               实际金额
             </label>
-            <DuoInput
-              type="number"
+            <AmountInput
               value={actualAmount}
-              onChange={(e) => setActualAmount(e.target.value)}
-              placeholder="0"
-              prefix="¥"
-              size="lg"
+              onClick={() => setShowActualCalculator(true)}
             />
             <p className="text-xs text-gray-300 mt-1 ml-1">实际花费的金额（可后续填写）</p>
           </div>
@@ -175,6 +183,28 @@ const EditSpecialBudgetItemView = ({
           {isSaving ? '保存中...' : '保存'}
         </DuoButton>
       </div>
+      
+      {/* 预算金额计算器 */}
+      {showBudgetCalculator && (
+        <Calculator
+          value={budgetAmount}
+          onChange={handleBudgetAmountChange}
+          onClose={() => setShowBudgetCalculator(false)}
+          title="预算金额"
+          showNote={false}
+        />
+      )}
+      
+      {/* 实际金额计算器 */}
+      {showActualCalculator && (
+        <Calculator
+          value={actualAmount}
+          onChange={handleActualAmountChange}
+          onClose={() => setShowActualCalculator(false)}
+          title="实际金额"
+          showNote={false}
+        />
+      )}
       
       {/* 删除确认弹窗 */}
       <ConfirmModal 

@@ -1,16 +1,17 @@
 // BudgetSetupView.jsx - 预算设置页面
-// 修复：支持自定义SVG图标渲染
+// 修复：月预算输入改为计算器模式，统一金额输入框样式
 
 import React, { useState } from 'react';
 import { Plus, Calendar, ChevronRight, Target, ArrowLeft } from 'lucide-react';
 import { saveWeeklyBudget } from '../api';
 import { getFloatingIcon } from '../constants/floatingIcons';
+import Calculator from '../components/CalculatorModal';
 
 // 导入设计系统组件
 import { 
   PageContainer, 
   DuoButton,
-  DuoInput,
+  AmountInput,
   LoadingOverlay
 } from '../components/design-system';
 
@@ -27,13 +28,14 @@ const BudgetSetupView = ({
   navigateTo, 
   onBack 
 }) => {
-  const [localMonthlyBudget, setLocalMonthlyBudget] = useState(monthlyBudget?.toString() || '3000');
+  const [localMonthlyBudget, setLocalMonthlyBudget] = useState(monthlyBudget || 3000);
   const [isSaving, setIsSaving] = useState(false);
   const [showAllExpenses, setShowAllExpenses] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
 
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
   const totalFixedExpenses = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const currentMonthlyBudget = monthlyBudget || 3000;
+  const currentMonthlyBudget = localMonthlyBudget || 3000;
   const availableForWeekly = currentMonthlyBudget - totalFixedExpenses;
   const suggestedWeeklyBudget = Math.floor(availableForWeekly / 4);
   
@@ -42,9 +44,9 @@ const BudgetSetupView = ({
 
   const handleMonthlyBudgetChange = (value) => {
     setLocalMonthlyBudget(value);
-    const amount = parseFloat(value) || 0;
-    if (setMonthlyBudget) setMonthlyBudget(amount);
-    localStorage.setItem('monthly_budget', amount.toString());
+    if (setMonthlyBudget) setMonthlyBudget(value);
+    localStorage.setItem('monthly_budget', value.toString());
+    setShowCalculator(false);
   };
 
   const handleExpenseClick = (expense) => {
@@ -99,17 +101,12 @@ const BudgetSetupView = ({
           <p className="text-gray-400 font-medium text-sm mt-1">配置你的月度预算计划</p>
         </div>
 
-        {/* SECTION 1: 每月总预算 */}
+        {/* SECTION 1: 每月总预算 - 使用计算器模式 */}
         <div className="bg-white rounded-3xl p-5 shadow-sm">
           <label className="text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 block">每月总收入/预算</label>
-          <DuoInput 
-            type="number"
-            prefix="¥"
-            size="lg"
+          <AmountInput
             value={localMonthlyBudget}
-            onChange={(e) => handleMonthlyBudgetChange(e.target.value)}
-            placeholder="3000"
-            className="font-rounded"
+            onClick={() => setShowCalculator(true)}
           />
         </div>
 
@@ -124,9 +121,9 @@ const BudgetSetupView = ({
             </div>
             <button 
               onClick={handleAddExpense}
-              className="h-10 px-4 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm flex items-center gap-1 hover:bg-gray-200 active:scale-95 transition-all"
+              className="w-10 h-10 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
             >
-              <Plus size={18} strokeWidth={3} /> 添加
+              <Plus size={20} strokeWidth={2.5} />
             </button>
           </div>
           
@@ -214,9 +211,9 @@ const BudgetSetupView = ({
             <label className="text-gray-400 font-bold uppercase tracking-wider text-xs">远航计划</label>
             <button 
               onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
-              className="text-cyan-500 font-bold text-sm flex items-center gap-1 hover:text-cyan-600 active:scale-95 transition-all"
+              className="w-10 h-10 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
             >
-              <Plus size={18} strokeWidth={3} /> 新建
+              <Plus size={20} strokeWidth={2.5} />
             </button>
           </div>
            
@@ -264,6 +261,17 @@ const BudgetSetupView = ({
           </div>
         </div>
       </div>
+      
+      {/* 计算器弹窗 */}
+      {showCalculator && (
+        <Calculator
+          value={localMonthlyBudget}
+          onChange={handleMonthlyBudgetChange}
+          onClose={() => setShowCalculator(false)}
+          title="每月预算"
+          showNote={false}
+        />
+      )}
       
       <LoadingOverlay isLoading={isSaving} />
     </PageContainer>

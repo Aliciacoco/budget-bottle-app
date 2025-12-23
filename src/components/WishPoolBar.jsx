@@ -1,5 +1,6 @@
 // WishPoolBar.jsx - 心愿池组件
 // 支持显示图标或用户上传的图片
+// 支持结算动画时金额递增显示
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ChevronRight, Check } from 'lucide-react';
@@ -23,6 +24,7 @@ const formatAmount = (amount) => {
 
 const WishPoolBar = ({ 
   poolAmount, 
+  animatingAmount = 0,  // 结算动画中增加的金额
   wishes, 
   onWishClick, 
   onPoolClick, 
@@ -30,8 +32,8 @@ const WishPoolBar = ({
   debugMode = false, 
   onDebugChange 
 }) => {
-  // 格式化金额
-  const displayPoolAmount = formatAmount(poolAmount);
+  // 显示金额 = 基础金额 + 动画金额
+  const displayPoolAmount = formatAmount(poolAmount + animatingAmount);
   
   // 高度配置
   const HEADER_HEIGHT = 60;
@@ -49,15 +51,16 @@ const WishPoolBar = ({
   const [containerWidth, setContainerWidth] = useState(400);
   const [ballPositions, setBallPositions] = useState([]);
   
-  // 根据金额计算液体高度
+  // 根据金额计算液体高度（包含动画金额）
+  const totalAmount = poolAmount + animatingAmount;
   const liquidHeight = useMemo(() => {
-    if (poolAmount <= 0) return 0;
-    if (poolAmount >= maxPoolAmount) return MAX_LIQUID_HEIGHT;
-    return Math.max(MIN_LIQUID_HEIGHT, (poolAmount / maxPoolAmount) * MAX_LIQUID_HEIGHT);
-  }, [poolAmount, maxPoolAmount]);
+    if (totalAmount <= 0) return 0;
+    if (totalAmount >= maxPoolAmount) return MAX_LIQUID_HEIGHT;
+    return Math.max(MIN_LIQUID_HEIGHT, (totalAmount / maxPoolAmount) * MAX_LIQUID_HEIGHT);
+  }, [totalAmount, maxPoolAmount]);
   
-  const hasBalance = poolAmount > 0;
-  const enableBuoyancy = poolAmount >= maxPoolAmount / 3;
+  const hasBalance = totalAmount > 0;
+  const enableBuoyancy = totalAmount >= maxPoolAmount / 3;
   
   // 动态计算高度
   const svgHeight = useMemo(() => {
@@ -404,6 +407,9 @@ const WishPoolBar = ({
     };
   }, [containerWidth, svgHeight, hasBalance, enableBuoyancy, liquidTop, seabedTop, getMaxYForBall, getFloatTargetY, getSeabedWaveY, padding]);
   
+  // 金额是否在动画中
+  const isAnimating = animatingAmount > 0;
+  
   return (
     <div className="relative" style={{ height: `${totalHeight}px` }}>
       {/* 引入字体 */}
@@ -411,6 +417,13 @@ const WishPoolBar = ({
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded {
           font-family: 'M PLUS Rounded 1c', sans-serif;
+        }
+        @keyframes pulse-amount {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        .animate-pulse-amount {
+          animation: pulse-amount 0.3s ease-in-out infinite;
         }
       `}</style>
 
@@ -445,7 +458,10 @@ const WishPoolBar = ({
                 <span className="text-sm text-gray-400 font-bold">心愿池</span>
                 <ChevronRight size={14} className="text-gray-400" strokeWidth={2.5} />
               </div>
-              <span className="text-xl font-extrabold font-rounded" style={{ color: POOL_COLOR }}>
+              <span 
+                className={`text-xl font-extrabold font-rounded ${isAnimating ? 'animate-pulse-amount' : ''}`} 
+                style={{ color: POOL_COLOR }}
+              >
                 ¥{displayPoolAmount.toLocaleString()}
               </span>
             </div>
@@ -454,6 +470,7 @@ const WishPoolBar = ({
             onClick={(e) => { e.stopPropagation(); onDebugChange?.(debugMode ? -1 : poolAmount); }}
             className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 text-xs font-bold flex items-center justify-center hover:bg-gray-300 active:scale-95 transition-all" 
             title="调试"
+            style={{ display: 'none' }}
           >
             {debugMode ? '×' : '?'}
           </button>

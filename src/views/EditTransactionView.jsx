@@ -1,9 +1,10 @@
 // EditTransactionView.jsx - 编辑消费页面
-// 修复：删除按钮移到页面右上角
+// 修复：金额输入使用计算器模式
 
 import React, { useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { updateTransaction, deleteTransaction } from '../api';
+import Calculator from '../components/CalculatorModal';
 
 // 导入设计系统组件
 import { 
@@ -11,6 +12,7 @@ import {
   TransparentNavBar,
   DuoButton,
   DuoInput,
+  AmountInput,
   ConfirmModal,
   LoadingOverlay
 } from '../components/design-system';
@@ -23,10 +25,11 @@ const EditTransactionView = ({
   viewingTransactions, 
   setViewingTransactions 
 }) => {
-  const [amount, setAmount] = useState(editingTransaction?.amount?.toString() || '');
+  const [amount, setAmount] = useState(editingTransaction?.amount || 0);
   const [description, setDescription] = useState(editingTransaction?.description || '');
   const [date, setDate] = useState(editingTransaction?.date?.replace(/\//g, '-') || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   if (!editingTransaction) return null;
@@ -38,7 +41,7 @@ const EditTransactionView = ({
       const result = await updateTransaction(
         editingTransaction.id, 
         weekInfo.weekKey, 
-        parseFloat(amount), 
+        amount, 
         description, 
         date.replace(/-/g, '/')
       );
@@ -71,6 +74,12 @@ const EditTransactionView = ({
     }
   };
 
+  // 计算器回调
+  const handleAmountChange = (newAmount) => {
+    setAmount(newAmount);
+    setShowCalculator(false);
+  };
+
   return (
     <PageContainer bg="gray">
       {/* 导航栏 - 删除按钮在右上角 */}
@@ -93,19 +102,13 @@ const EditTransactionView = ({
         {/* 表单卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
           
-          {/* 金额输入 - 突出显示 */}
+          {/* 金额输入 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">金额</label>
-            <div className="relative">
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl text-gray-300 font-bold">¥</span>
-              <input 
-                type="number" 
-                value={amount} 
-                onChange={(e) => setAmount(e.target.value)} 
-                placeholder="0"
-                className="w-full pl-12 pr-4 py-5 bg-gray-100 border-2 border-gray-200 rounded-2xl text-3xl font-extrabold text-gray-700 font-rounded focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-              />
-            </div>
+            <AmountInput
+              value={amount}
+              onClick={() => setShowCalculator(true)}
+            />
           </div>
           
           {/* 备注输入 */}
@@ -126,7 +129,7 @@ const EditTransactionView = ({
               type="date" 
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
-              className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-3 font-bold text-gray-700 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+              className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-4 font-bold text-gray-700 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors min-h-[56px]"
               style={{ colorScheme: 'light' }}
             />
           </div>
@@ -142,6 +145,17 @@ const EditTransactionView = ({
           {isLoading ? '保存中...' : '保存修改'}
         </DuoButton>
       </div>
+
+      {/* 计算器弹窗 */}
+      {showCalculator && (
+        <Calculator
+          value={amount}
+          onChange={handleAmountChange}
+          onClose={() => setShowCalculator(false)}
+          title="输入金额"
+          showNote={false}
+        />
+      )}
 
       {/* 删除确认弹窗 */}
       <ConfirmModal 
