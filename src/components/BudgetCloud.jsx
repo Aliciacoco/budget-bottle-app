@@ -12,7 +12,7 @@ const BudgetCloud = ({ remaining, total, spent, onClick }) => {
   // 原始SVG云朵路径边界: x: 26-334 (宽308), y: 38-262 (高224)
   const originalW = 308;
   const originalH = 224;
-  const logicalW = 240;
+  const logicalW = 280;
   const logicalH = Math.round(logicalW * (originalH / originalW));
 
   // 修复：确保 percentage 计算正确
