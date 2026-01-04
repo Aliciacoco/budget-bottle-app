@@ -1,4 +1,5 @@
 import AV from './leancloud';
+import { getUserPrefix } from './auth';
 
 // ==================== 工具函数 ====================
 
@@ -18,6 +19,25 @@ const fixAmount = (amount) => {
 // 静默日志（生产环境关闭）
 const DEBUG = false;
 const log = (...args) => DEBUG && console.log(...args);
+
+// ==================== 用户数据隔离 ====================
+// 所有数据都带上 userId 字段，实现账号间数据隔离
+
+const getCurrentUserId = () => {
+  return getUserPrefix(); // 返回当前登录用户的 username
+};
+
+// 为对象设置用户ID
+const setUserId = (obj) => {
+  obj.set('userId', getCurrentUserId());
+  return obj;
+};
+
+// 为查询添加用户过滤
+const addUserFilter = (query) => {
+  query.equalTo('userId', getCurrentUserId());
+  return query;
+};
 
 // ==================== 防重复提交锁 ====================
 const pendingOperations = new Map();
@@ -41,6 +61,7 @@ export const getWeeklyBudget = async (weekKey) => {
   try {
     const query = new AV.Query('WeeklyBudget');
     query.equalTo('weekKey', weekKey);
+    addUserFilter(query); // 添加用户过滤
     const budget = await query.first();
     
     if (budget) {
@@ -75,6 +96,7 @@ export const saveWeeklyBudget = async (weekKey, amount) => {
       try {
         const query = new AV.Query('WeeklyBudget');
         query.equalTo('weekKey', weekKey);
+        addUserFilter(query); // 添加用户过滤
         budget = await query.first();
       } catch (queryError) {
         if (queryError.code !== 101) throw queryError;
@@ -91,6 +113,7 @@ export const saveWeeklyBudget = async (weekKey, amount) => {
         budget.set('weekKey', weekKey);
         budget.set('amount', fixedAmount);
         budget.set('settled', false);
+        setUserId(budget); // 设置用户ID
         setPublicACL(budget);
       }
       
@@ -118,6 +141,7 @@ export const markWeeklyBudgetSettled = async (weekKey) => {
     try {
       const query = new AV.Query('WeeklyBudget');
       query.equalTo('weekKey', weekKey);
+      addUserFilter(query); // 添加用户过滤
       const budget = await query.first();
       
       if (budget) {
@@ -140,6 +164,7 @@ export const getTransactions = async (weekKey) => {
   try {
     const query = new AV.Query('Transaction');
     query.equalTo('weekKey', weekKey);
+    addUserFilter(query); // 添加用户过滤
     query.descending('createdAt');
     
     const transactions = await query.find();
@@ -177,6 +202,7 @@ export const createTransaction = async (weekKey, date, time, amount, description
     transaction.set('time', time);
     transaction.set('amount', fixedAmount);
     transaction.set('description', description);
+    setUserId(transaction); // 设置用户ID
     setPublicACL(transaction);
     
     await transaction.save();
@@ -246,6 +272,7 @@ export const deleteTransaction = async (transactionId) => {
 export const getFixedExpenses = async () => {
   try {
     const query = new AV.Query('FixedExpense');
+    addUserFilter(query); // 添加用户过滤
     query.ascending('createdAt');
     const expenses = await query.find();
     
@@ -278,6 +305,7 @@ export const createFixedExpense = async (name, amount, expireDate, enabled = tru
     expense.set('amount', fixAmount(amount));
     expense.set('expireDate', expireDate);
     expense.set('enabled', enabled);
+    setUserId(expense); // 设置用户ID
     setPublicACL(expense);
     
     await expense.save();
@@ -343,6 +371,7 @@ export const deleteFixedExpense = async (expenseId) => {
 export const getWishPoolHistory = async () => {
   try {
     const query = new AV.Query('WishPoolHistory');
+    addUserFilter(query); // 添加用户过滤
     query.descending('settledAt');
     query.limit(100);
     const histories = await query.find();
@@ -404,6 +433,7 @@ export const checkWeekSettled = async (weekKey) => {
     const query = new AV.Query('WishPoolHistory');
     query.equalTo('weekKey', weekKey);
     query.notEqualTo('isDeduction', true);
+    addUserFilter(query); // 添加用户过滤
     const result = await query.first();
     
     return { success: true, settled: !!result };
@@ -417,13 +447,14 @@ export const checkWeekSettled = async (weekKey) => {
 };
 
 export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, savedAmount, isDeduction = false, wishName = '', wishId = '') => {
-  return withLock(`createHistory:${weekKey}`, async () => {
+  return withLock(`createHistory:${getCurrentUserId()}:${weekKey}`, async () => {
     try {
       if (!isDeduction) {
         try {
           const checkQuery = new AV.Query('WishPoolHistory');
           checkQuery.equalTo('weekKey', weekKey);
           checkQuery.notEqualTo('isDeduction', true);
+          addUserFilter(checkQuery); // 添加用户过滤
           const existing = await checkQuery.first();
           
           if (existing) {
@@ -453,6 +484,7 @@ export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, 
       history.set('wishName', wishName);
       history.set('wishId', wishId);
       history.set('settledAt', new Date());
+      setUserId(history); // 设置用户ID
       setPublicACL(history);
       
       await history.save();
@@ -490,6 +522,7 @@ export const deleteWishPoolHistory = async (historyId) => {
 export const getWishes = async () => {
   try {
     const query = new AV.Query('Wish');
+    addUserFilter(query); // 添加用户过滤
     query.ascending('createdAt');
     const wishes = await query.find();
     
@@ -525,6 +558,7 @@ export const createWish = async (description, amount, image, fulfilled = false, 
     wish.set('icon', icon || 'star');
     if (image) wish.set('image', image);
     else wish.unset('image');
+    setUserId(wish); // 设置用户ID
     setPublicACL(wish);
     
     await wish.save();
@@ -594,6 +628,7 @@ export const deleteWish = async (wishId) => {
 export const getSpecialBudgets = async () => {
   try {
     const query = new AV.Query('SpecialBudget');
+    addUserFilter(query); // 添加用户过滤
     query.descending('createdAt');
     const budgets = await query.find();
     
@@ -605,7 +640,6 @@ export const getSpecialBudgets = async () => {
       startDate: budget.get('startDate') || '',
       endDate: budget.get('endDate') || '',
       pinnedToHome: budget.get('pinnedToHome') || false,
-      // 新增：图标位置和缩放（云端存储）
       iconOffsetX: budget.get('iconOffsetX') || 0,
       iconOffsetY: budget.get('iconOffsetY') || 0,
       iconScale: budget.get('iconScale') || 1,
@@ -634,10 +668,10 @@ export const createSpecialBudget = async (name, icon, totalBudget, startDate, en
     budget.set('startDate', startDate);
     budget.set('endDate', endDate);
     budget.set('pinnedToHome', pinnedToHome);
-    // 默认位置
     budget.set('iconOffsetX', 0);
     budget.set('iconOffsetY', 0);
     budget.set('iconScale', 1);
+    setUserId(budget); // 设置用户ID
     setPublicACL(budget);
     
     await budget.save();
@@ -698,7 +732,6 @@ export const updateSpecialBudget = async (budgetId, name, icon, totalBudget, sta
   }
 };
 
-// 新增：更新专项预算图标位置（云端同步）
 export const updateSpecialBudgetIconPosition = async (budgetId, offsetX, offsetY, scale) => {
   try {
     const query = new AV.Query('SpecialBudget');
@@ -728,15 +761,36 @@ export const updateSpecialBudgetIconPosition = async (budgetId, offsetX, offsetY
 
 export const deleteSpecialBudget = async (budgetId) => {
   try {
+    // 先删除所有子项的消费记录
     try {
       const itemQuery = new AV.Query('SpecialBudgetItem');
       itemQuery.equalTo('budgetId', budgetId);
+      addUserFilter(itemQuery); // 添加用户过滤
       const items = await itemQuery.find();
-      if (items.length > 0) await AV.Object.destroyAll(items);
+      
+      for (const item of items) {
+        // 删除每个子项的消费记录
+        try {
+          const transQuery = new AV.Query('SpecialBudgetTransaction');
+          transQuery.equalTo('itemId', item.id);
+          const transactions = await transQuery.find();
+          if (transactions.length > 0) {
+            await AV.Object.destroyAll(transactions);
+          }
+        } catch (transError) {
+          if (transError.code !== 101) throw transError;
+        }
+      }
+      
+      // 删除所有子项
+      if (items.length > 0) {
+        await AV.Object.destroyAll(items);
+      }
     } catch (itemError) {
       if (itemError.code !== 101) throw itemError;
     }
     
+    // 最后删除预算本身
     const query = new AV.Query('SpecialBudget');
     const budget = await query.get(budgetId);
     await budget.destroy();
@@ -754,6 +808,7 @@ export const getSpecialBudgetItems = async (budgetId) => {
   try {
     const query = new AV.Query('SpecialBudgetItem');
     query.equalTo('budgetId', budgetId);
+    addUserFilter(query); // 添加用户过滤
     query.ascending('createdAt');
     const items = await query.find();
     
@@ -786,6 +841,7 @@ export const createSpecialBudgetItem = async (budgetId, name, budgetAmount, actu
     item.set('name', name);
     item.set('budgetAmount', fixAmount(budgetAmount));
     item.set('actualAmount', fixAmount(actualAmount));
+    setUserId(item); // 设置用户ID
     setPublicACL(item);
     
     await item.save();
@@ -835,12 +891,142 @@ export const updateSpecialBudgetItem = async (itemId, name, budgetAmount, actual
 
 export const deleteSpecialBudgetItem = async (itemId) => {
   try {
+    // 先删除该子项的所有消费记录
+    try {
+      const transQuery = new AV.Query('SpecialBudgetTransaction');
+      transQuery.equalTo('itemId', itemId);
+      addUserFilter(transQuery); // 添加用户过滤
+      const transactions = await transQuery.find();
+      if (transactions.length > 0) {
+        await AV.Object.destroyAll(transactions);
+      }
+    } catch (transError) {
+      if (transError.code !== 101) throw transError;
+    }
+    
+    // 再删除子项本身
     const query = new AV.Query('SpecialBudgetItem');
     const item = await query.get(itemId);
     await item.destroy();
     return { success: true };
   } catch (error) {
     console.error('删除专项预算子项失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// ==================== 专项预算消费记录 API ====================
+
+export const getSpecialBudgetTransactions = async (itemId) => {
+  try {
+    const query = new AV.Query('SpecialBudgetTransaction');
+    query.equalTo('itemId', itemId);
+    addUserFilter(query); // 添加用户过滤
+    query.descending('date');
+    query.descending('createdAt');
+    const transactions = await query.find();
+    
+    const transactionData = transactions.map(t => ({
+      id: t.id,
+      itemId: t.get('itemId'),
+      amount: fixAmount(t.get('amount') || 0),
+      description: t.get('description') || '',
+      date: t.get('date') || '',
+      createdAt: t.get('createdAt')
+    }));
+    
+    log('✅ 加载消费记录:', transactionData.length, '条');
+    return { success: true, data: transactionData };
+  } catch (error) {
+    if (error.code === 101) {
+      return { success: true, data: [] };
+    }
+    console.error('加载消费记录失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const createSpecialBudgetTransaction = async (itemId, amount, description, date) => {
+  try {
+    const SpecialBudgetTransaction = AV.Object.extend('SpecialBudgetTransaction');
+    const transaction = new SpecialBudgetTransaction();
+    
+    transaction.set('itemId', itemId);
+    transaction.set('amount', fixAmount(amount));
+    transaction.set('description', description || '');
+    transaction.set('date', date);
+    setUserId(transaction); // 设置用户ID
+    setPublicACL(transaction);
+    
+    await transaction.save();
+    
+    log('✅ 创建消费记录:', amount);
+    return {
+      success: true,
+      data: {
+        id: transaction.id,
+        itemId: transaction.get('itemId'),
+        amount: fixAmount(transaction.get('amount')),
+        description: transaction.get('description'),
+        date: transaction.get('date')
+      }
+    };
+  } catch (error) {
+    console.error('创建消费记录失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const updateSpecialBudgetTransaction = async (transactionId, amount, description, date) => {
+  try {
+    const query = new AV.Query('SpecialBudgetTransaction');
+    const transaction = await query.get(transactionId);
+    
+    transaction.set('amount', fixAmount(amount));
+    transaction.set('description', description || '');
+    transaction.set('date', date);
+    
+    await transaction.save();
+    
+    return {
+      success: true,
+      data: {
+        id: transaction.id,
+        itemId: transaction.get('itemId'),
+        amount: fixAmount(transaction.get('amount')),
+        description: transaction.get('description'),
+        date: transaction.get('date')
+      }
+    };
+  } catch (error) {
+    console.error('更新消费记录失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const deleteSpecialBudgetTransaction = async (transactionId) => {
+  try {
+    const query = new AV.Query('SpecialBudgetTransaction');
+    const transaction = await query.get(transactionId);
+    await transaction.destroy();
+    return { success: true };
+  } catch (error) {
+    console.error('删除消费记录失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// 获取明细的实际消费总额（通过消费记录汇总）
+export const getSpecialBudgetItemActualAmount = async (itemId) => {
+  try {
+    const result = await getSpecialBudgetTransactions(itemId);
+    if (result.success) {
+      const total = result.data.reduce((sum, t) => sum + (t.amount || 0), 0);
+      return { success: true, amount: fixAmount(total) };
+    }
+    return { success: true, amount: 0 };
+  } catch (error) {
+    console.error('计算实际金额失败:', error);
     return { success: false, error: error.message };
   }
 };

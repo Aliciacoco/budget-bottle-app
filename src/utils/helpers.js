@@ -103,39 +103,41 @@ export const getISOWeekNumber = (date) => {
  * weekKey 保持原有格式（按月内周数）确保数据库兼容
  * isoWeekNumber 用于UI显示（按年的自然周）
  */
+// 修改 getWeekInfo 函数
 export const getWeekInfo = (date = new Date()) => {
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = d.getMonth();
-  const day = d.getDate();
   
-  // 计算月内周数（用于 weekKey，保持兼容）
-  const firstDayOfMonth = new Date(year, month, 1);
-  const firstDayWeekday = firstDayOfMonth.getDay() || 7;
-  const monthWeekNumber = Math.ceil((day + firstDayWeekday - 1) / 7);
-  
-  // 计算周一和周日
+  // 计算周一
   const dayOfWeek = d.getDay() || 7;
   const weekStart = new Date(d);
-  weekStart.setDate(day - dayOfWeek + 1);
+  weekStart.setDate(d.getDate() - dayOfWeek + 1);
   weekStart.setHours(0, 0, 0, 0);
   
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
   
+  // 🔧 关键修改：用周一的年月来生成 weekKey
+  const weekStartYear = weekStart.getFullYear();
+  const weekStartMonth = weekStart.getMonth();
+  
+  // 计算周一在其所属月份的周数
+  const firstDayOfMonth = new Date(weekStartYear, weekStartMonth, 1);
+  const firstDayWeekday = firstDayOfMonth.getDay() || 7;
+  const monthWeekNumber = Math.ceil((weekStart.getDate() + firstDayWeekday - 1) / 7);
+  
   // 获取 ISO 周号（用于显示）
   const isoWeek = getISOWeekNumber(d);
   
-  // weekKey 使用原有格式：年-月-W月内周数
-  const weekKey = `${year}-${String(month + 1).padStart(2, '0')}-W${monthWeekNumber}`;
+  // weekKey 基于周一的年月
+  const weekKey = `${weekStartYear}-${String(weekStartMonth + 1).padStart(2, '0')}-W${monthWeekNumber}`;
   
   return {
-    year: year,
-    month: month + 1,
-    weekNumber: monthWeekNumber,      // 月内周数（用于weekKey）
-    isoWeekNumber: isoWeek.weekNumber, // ISO年周数（用于显示）
-    isoYear: isoWeek.year,             // ISO周所属年份
+    year: weekStartYear,
+    month: weekStartMonth + 1,
+    weekNumber: monthWeekNumber,
+    isoWeekNumber: isoWeek.weekNumber,
+    isoYear: isoWeek.year,
     weekStart,
     weekEnd,
     weekKey

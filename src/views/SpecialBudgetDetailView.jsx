@@ -1,5 +1,5 @@
 // SpecialBudgetDetailView.jsx - 专项预算详情页
-// 修复：支持自定义SVG图标渲染
+// 修复：从 specialBudgets 中获取最新数据，确保编辑后图标更新
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Plus, Settings, Trash2, ChevronRight } from 'lucide-react';
@@ -23,7 +23,8 @@ const SpecialBudgetDetailView = ({
   setSpecialBudgets,
   navigateTo
 }) => {
-  const budget = editingSpecialBudget || {};
+  // 从 specialBudgets 中获取最新数据，确保编辑后能看到更新
+  const budget = specialBudgets?.find(b => b.id === editingSpecialBudget?.id) || editingSpecialBudget || {};
   
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);

@@ -1,7 +1,7 @@
 // CalculatorModal.jsx - 计算器弹窗组件
-// 使用设计系统优化
+// 修复：触控区域、运算符替换、添加除号、4列布局
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 
 // 设计系统颜色
 const colors = {
@@ -32,7 +32,10 @@ const Calculator = ({
   const [hasOperator, setHasOperator] = useState(false);
   const [note, setNote] = useState(noteValue);
   
-  const handleNumber = (num) => {
+  // 运算符列表
+  const operators = ['+', '-', '×', '÷'];
+  
+  const handleNumber = useCallback((num) => {
     setDisplay(prev => {
       if (prev === '' || prev === '0') return num === '.' ? '0.' : num;
       if (num === '.') {
@@ -42,35 +45,70 @@ const Calculator = ({
       }
       return prev + num;
     });
-  };
+  }, []);
   
-  const handleOperator = (op) => {
-    if (display && !hasOperator) {
-      setDisplay(prev => prev + ' ' + op + ' ');
-      setHasOperator(true);
-    }
-  };
-  
-  const handleBackspace = () => {
+  const handleOperator = useCallback((op) => {
     setDisplay(prev => {
-      const newVal = prev.trim().slice(0, -1).trim();
-      if (!newVal.includes('+') && !newVal.includes('-') && !newVal.includes('×') && !newVal.includes('÷')) {
-        setHasOperator(false);
+      if (!prev) return prev;
+      
+      const trimmed = prev.trim();
+      const lastChar = trimmed.slice(-1);
+      const isLastCharOperator = operators.includes(lastChar);
+      
+      if (isLastCharOperator) {
+        // 直接替换运算符
+        return trimmed.slice(0, -1) + op + ' ';
       }
+      
+      if (hasOperator) return prev;
+      
+      setHasOperator(true);
+      return trimmed + ' ' + op + ' ';
+    });
+  }, [hasOperator, operators]);
+  
+  const handleBackspace = useCallback(() => {
+    setDisplay(prev => {
+      let newVal = prev;
+      if (prev.endsWith(' ')) {
+        newVal = prev.slice(0, -3).trim();
+      } else {
+        newVal = prev.slice(0, -1);
+      }
+      
+      const hasOp = operators.some(op => newVal.includes(op));
+      setHasOperator(hasOp);
+      
       return newVal;
     });
-  };
+  }, [operators]);
   
-  const calculate = () => {
+  const calculate = useCallback(() => {
     try {
       let expr = display.replace(/×/g, '*').replace(/÷/g, '/').replace(/\s/g, '');
       if (!expr) return 0;
-      const result = eval(expr);
-      return isNaN(result) ? 0 : Math.round(result * 100) / 100;
-    } catch { return 0; }
-  };
+      
+      if (['+', '-', '*', '/'].includes(expr.slice(-1))) {
+        expr = expr.slice(0, -1);
+      }
+      
+      const result = Function('"use strict"; return (' + expr + ')')();
+      return isNaN(result) || !isFinite(result) ? 0 : Math.round(result * 100) / 100;
+    } catch { 
+      return 0; 
+    }
+  }, [display]);
   
-  const handleConfirm = () => {
+  // 等于号：计算结果并显示，可以继续运算
+  const handleEquals = useCallback(() => {
+    const result = calculate();
+    if (result !== 0 || display) {
+      setDisplay(result.toString());
+      setHasOperator(false);
+    }
+  }, [calculate, display]);
+  
+  const handleConfirm = useCallback(() => {
     const result = calculate();
     if (result <= 0) return;
     
@@ -79,37 +117,78 @@ const Calculator = ({
     }
     onChange(result, note);
     onClose();
-  };
+  }, [calculate, showNote, onNoteChange, note, onChange, onClose]);
+  
+  // 阻止事件冒泡
+  const stopPropagation = useCallback((e) => {
+    e.stopPropagation();
+    e.preventDefault();
+  }, []);
+  
+  // 按钮点击处理
+  const createButtonHandler = useCallback((handler, ...args) => {
+    return (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      handler(...args);
+    };
+  }, []);
   
   const displayResult = calculate();
   
   // 按键样式
-  const numberKeyClass = "py-4 rounded-2xl text-xl font-bold bg-white border-2 border-gray-200 text-gray-700 active:scale-95 active:bg-gray-50 transition-all";
-  const operatorKeyClass = "py-4 rounded-2xl text-xl font-bold bg-gray-100 border-2 border-gray-200 text-gray-500 active:scale-95 active:bg-gray-200 transition-all";
+  const baseKeyClass = "py-4 rounded-2xl text-xl font-bold active:scale-95 transition-all select-none touch-manipulation";
+  const numberKeyClass = `${baseKeyClass} bg-white border-2 border-gray-200 text-gray-700 active:bg-gray-50`;
+  const operatorKeyClass = `${baseKeyClass} bg-gray-100 border-2 border-gray-200 text-gray-500 active:bg-gray-200`;
   
+  // 关闭弹窗（带延迟防止穿透）
+  const handleClose = useCallback((e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    // 延迟关闭，防止触摸事件穿透到下层
+    setTimeout(() => {
+      onClose();
+    }, 50);
+  }, [onClose]);
+
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" 
-      onClick={onClose}
+      className="calc-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" 
+      onClick={handleClose}
+      onTouchStart={stopPropagation}
+      onTouchEnd={handleClose}
+      onTouchMove={stopPropagation}
     >
-      {/* 引入字体 */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded {
-          font-family: 'M PLUS Rounded 1c', sans-serif;
-        }
+        .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
         @keyframes slide-up { 
           from { transform: translateY(100%); } 
           to { transform: translateY(0); } 
         }
-        .animate-slide-up { 
-          animation: slide-up 0.3s ease-out; 
+        .animate-slide-up { animation: slide-up 0.3s ease-out; }
+        .calc-panel {
+          touch-action: none;
+          -webkit-touch-callout: none;
+          -webkit-user-select: none;
+          user-select: none;
+        }
+        .calc-panel button {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        }
+        /* 防止触摸穿透 */
+        .calc-overlay {
+          touch-action: none;
         }
       `}</style>
 
       <div 
-        className="bg-white rounded-t-3xl w-full max-w-md overflow-hidden animate-slide-up shadow-2xl" 
-        onClick={(e) => e.stopPropagation()}
+        className="calc-panel bg-white rounded-t-3xl w-full max-w-md overflow-hidden animate-slide-up shadow-2xl" 
+        onClick={stopPropagation}
+        onTouchEnd={stopPropagation}
+        onTouchStart={stopPropagation}
+        onTouchMove={stopPropagation}
       >
         {/* 显示区域 */}
         <div className="p-6 bg-gray-50 border-b-2 border-gray-100">
@@ -136,54 +215,64 @@ const Calculator = ({
               onChange={(e) => setNote(e.target.value)} 
               placeholder="备注：超市、外卖..." 
               className="w-full px-4 py-3 bg-gray-100 border-2 border-gray-200 rounded-2xl text-gray-700 font-bold placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+              onClick={stopPropagation}
+              onTouchEnd={stopPropagation}
             />
           </div>
         )}
         
-        {/* 数字键盘 */}
+        {/* 数字键盘 - 4列布局 */}
         <div className="p-4 grid grid-cols-4 gap-3">
-          {/* 第一行 */}
-          <button onClick={() => handleNumber('1')} className={numberKeyClass}>1</button>
-          <button onClick={() => handleNumber('2')} className={numberKeyClass}>2</button>
-          <button onClick={() => handleNumber('3')} className={numberKeyClass}>3</button>
-          <button onClick={() => handleOperator('+')} className={operatorKeyClass}>+</button>
+          {/* 第一行: 1 2 3 ÷ */}
+          <button onTouchEnd={createButtonHandler(handleNumber, '1')} onClick={createButtonHandler(handleNumber, '1')} className={numberKeyClass}>1</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '2')} onClick={createButtonHandler(handleNumber, '2')} className={numberKeyClass}>2</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '3')} onClick={createButtonHandler(handleNumber, '3')} className={numberKeyClass}>3</button>
+          <button onTouchEnd={createButtonHandler(handleOperator, '÷')} onClick={createButtonHandler(handleOperator, '÷')} className={operatorKeyClass}>÷</button>
           
-          {/* 第二行 */}
-          <button onClick={() => handleNumber('4')} className={numberKeyClass}>4</button>
-          <button onClick={() => handleNumber('5')} className={numberKeyClass}>5</button>
-          <button onClick={() => handleNumber('6')} className={numberKeyClass}>6</button>
-          <button onClick={() => handleOperator('-')} className={operatorKeyClass}>-</button>
+          {/* 第二行: 4 5 6 × */}
+          <button onTouchEnd={createButtonHandler(handleNumber, '4')} onClick={createButtonHandler(handleNumber, '4')} className={numberKeyClass}>4</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '5')} onClick={createButtonHandler(handleNumber, '5')} className={numberKeyClass}>5</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '6')} onClick={createButtonHandler(handleNumber, '6')} className={numberKeyClass}>6</button>
+          <button onTouchEnd={createButtonHandler(handleOperator, '×')} onClick={createButtonHandler(handleOperator, '×')} className={operatorKeyClass}>×</button>
           
-          {/* 第三行 */}
-          <button onClick={() => handleNumber('7')} className={numberKeyClass}>7</button>
-          <button onClick={() => handleNumber('8')} className={numberKeyClass}>8</button>
-          <button onClick={() => handleNumber('9')} className={numberKeyClass}>9</button>
-          <button onClick={() => handleOperator('×')} className={operatorKeyClass}>×</button>
+          {/* 第三行: 7 8 9 − */}
+          <button onTouchEnd={createButtonHandler(handleNumber, '7')} onClick={createButtonHandler(handleNumber, '7')} className={numberKeyClass}>7</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '8')} onClick={createButtonHandler(handleNumber, '8')} className={numberKeyClass}>8</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '9')} onClick={createButtonHandler(handleNumber, '9')} className={numberKeyClass}>9</button>
+          <button onTouchEnd={createButtonHandler(handleOperator, '-')} onClick={createButtonHandler(handleOperator, '-')} className={operatorKeyClass}>−</button>
           
-          {/* 第四行 */}
-          <button onClick={() => handleNumber('.')} className={numberKeyClass}>.</button>
-          <button onClick={() => handleNumber('0')} className={numberKeyClass}>0</button>
-          <button onClick={handleBackspace} className={operatorKeyClass}>⌫</button>
+          {/* 第四行: . 0 ⌫ + */}
+          <button onTouchEnd={createButtonHandler(handleNumber, '.')} onClick={createButtonHandler(handleNumber, '.')} className={numberKeyClass}>.</button>
+          <button onTouchEnd={createButtonHandler(handleNumber, '0')} onClick={createButtonHandler(handleNumber, '0')} className={numberKeyClass}>0</button>
+          <button onTouchEnd={createButtonHandler(handleBackspace)} onClick={createButtonHandler(handleBackspace)} className={operatorKeyClass}>⌫</button>
+          <button onTouchEnd={createButtonHandler(handleOperator, '+')} onClick={createButtonHandler(handleOperator, '+')} className={operatorKeyClass}>+</button>
+          
+          {/* 第五行: 取消 = 确认(占2格) */}
           <button 
-            onClick={handleConfirm} 
+            onTouchEnd={handleClose}
+            onClick={handleClose}
+            className={`${baseKeyClass} bg-gray-50 border-2 border-gray-200 text-gray-400 active:bg-gray-100`}
+          >
+            取消
+          </button>
+          <button 
+            onTouchEnd={createButtonHandler(handleEquals)} 
+            onClick={createButtonHandler(handleEquals)} 
+            className={`${baseKeyClass} bg-amber-50 border-2 border-amber-200 text-amber-500 active:bg-amber-100`}
+          >
+            =
+          </button>
+          <button 
+            onTouchEnd={createButtonHandler(handleConfirm)}
+            onClick={createButtonHandler(handleConfirm)}
             disabled={displayResult <= 0}
-            className="py-4 rounded-2xl text-xl font-extrabold text-white active:scale-95 transition-all border-b-4 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none"
+            className="col-span-2 py-4 rounded-2xl text-xl font-extrabold text-white active:scale-95 transition-all border-b-4 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none select-none touch-manipulation"
             style={{ 
               backgroundColor: colors.primary,
               borderColor: colors.primaryDark
             }}
           >
             {showNote ? '记录' : '完成'}
-          </button>
-        </div>
-        
-        {/* 取消按钮 */}
-        <div className="px-4 pb-6">
-          <button 
-            onClick={onClose} 
-            className="w-full py-3 text-gray-400 font-bold text-center hover:text-gray-600 active:scale-98 transition-all"
-          >
-            取消
           </button>
         </div>
       </div>

@@ -1,8 +1,9 @@
 // BudgetSetupView.jsx - 预算设置页面
 // 修复：月预算输入改为计算器模式，统一金额输入框样式
+// 新增：专项支出历史/进行中状态标识
 
 import React, { useState } from 'react';
-import { Plus, Calendar, ChevronRight, Target, ArrowLeft } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, Target, ArrowLeft, LogOut, Clock } from 'lucide-react';
 import { saveWeeklyBudget } from '../api';
 import { getFloatingIcon } from '../constants/floatingIcons';
 import Calculator from '../components/CalculatorModal';
@@ -12,8 +13,35 @@ import {
   PageContainer, 
   DuoButton,
   AmountInput,
-  LoadingOverlay
+  LoadingOverlay,
+  ConfirmModal
 } from '../components/design-system';
+
+// 判断专项预算状态
+const getBudgetStatus = (budget) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // 没有日期，默认进行中
+  if (!budget.startDate && !budget.endDate) {
+    return 'ongoing';
+  }
+  
+  const startDate = budget.startDate ? new Date(budget.startDate) : null;
+  const endDate = budget.endDate ? new Date(budget.endDate) : null;
+  
+  // 有结束日期且已过期
+  if (endDate && endDate < today) {
+    return 'history';
+  }
+  
+  // 有开始日期但还没开始
+  if (startDate && startDate > today) {
+    return 'upcoming';
+  }
+  
+  return 'ongoing';
+};
 
 const BudgetSetupView = ({ 
   monthlyBudget = 3000, 
@@ -26,12 +54,15 @@ const BudgetSetupView = ({
   weeklyBudget,
   setWeeklyBudget,
   navigateTo, 
-  onBack 
+  onBack,
+  currentUser,
+  onLogout
 }) => {
   const [localMonthlyBudget, setLocalMonthlyBudget] = useState(monthlyBudget || 3000);
   const [isSaving, setIsSaving] = useState(false);
   const [showAllExpenses, setShowAllExpenses] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
   const totalFixedExpenses = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -70,6 +101,11 @@ const BudgetSetupView = ({
     }
   };
 
+  const handleLogout = () => {
+    setShowLogoutConfirm(false);
+    if (onLogout) onLogout();
+  };
+
   return (
     <PageContainer bg="gray" className="relative pb-8">
       {/* 引入 M PLUS Rounded 1c 字体 */}
@@ -95,9 +131,11 @@ const BudgetSetupView = ({
       {/* 主内容区 */}
       <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
         
-        {/* 页面标题 */}
+        {/* 页面标题 - 融入用户昵称 */}
         <div className="text-center mb-2">
-          <h1 className="text-2xl font-extrabold text-gray-800">预算设置</h1>
+          <h1 className="text-2xl font-extrabold text-gray-800">
+            {currentUser ? `${currentUser.nickname || currentUser.username}的预算` : '预算设置'}
+          </h1>
           <p className="text-gray-400 font-medium text-sm mt-1">配置你的月度预算计划</p>
         </div>
 
@@ -205,10 +243,10 @@ const BudgetSetupView = ({
           </div>
         </div>
 
-        {/* SECTION 4: 远航计划 - 修复图标渲染 */}
+        {/* SECTION 4: 专项支出 - 带历史/进行中状态 */}
         <div className="bg-white rounded-3xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <label className="text-gray-400 font-bold uppercase tracking-wider text-xs">远航计划</label>
+            <label className="text-gray-400 font-bold uppercase tracking-wider text-xs">专项支出</label>
             <button 
               onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
               className="w-10 h-10 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
@@ -225,30 +263,64 @@ const BudgetSetupView = ({
               const items = specialBudgetItems[budget.id] || [];
               const totalBudget = items.reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
               
+              // 获取状态
+              const status = getBudgetStatus(budget);
+              const isHistory = status === 'history';
+              const isUpcoming = status === 'upcoming';
+              
               return (
                 <div 
                   key={budget.id}
                   onClick={() => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
-                  className="cursor-pointer bg-gray-50 rounded-2xl p-4 flex items-center gap-4 active:bg-gray-100 active:scale-[0.99] transition-all"
+                  className={`cursor-pointer rounded-2xl p-4 flex items-center gap-4 active:scale-[0.99] transition-all ${
+                    isHistory ? 'bg-gray-100 opacity-70' : 'bg-gray-50 active:bg-gray-100'
+                  }`}
                 >
-                  {/* 自定义 SVG 图标 */}
-                  <div 
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{ 
-                      backgroundColor: iconColor + '15',
-                    }}
-                  >
-                    <div className="w-8 h-8">
-                      <IconComponent className="w-full h-full" />
+                  {/* 图标区域 - 历史状态置灰 */}
+                  <div className="relative">
+                    <div 
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        isHistory ? 'bg-gray-200' : ''
+                      }`}
+                      style={{ 
+                        backgroundColor: isHistory ? undefined : iconColor + '15'
+                      }}
+                    >
+                      <div 
+                        className="w-8 h-8"
+                        style={{ 
+                          filter: isHistory ? 'grayscale(100%)' : 'none',
+                          opacity: isHistory ? 0.5 : 1
+                        }}
+                      >
+                        <IconComponent className="w-full h-full" />
+                      </div>
                     </div>
+                    
                   </div>
+                  
                   <div className="flex-1">
-                    <div className="font-extrabold text-gray-700 text-lg">{budget.name}</div>
-                    <div className="text-gray-400 font-bold text-xs mt-1 font-rounded">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-extrabold text-lg ${isHistory ? 'text-gray-400' : 'text-gray-700'}`}>
+                        {budget.name}
+                      </span>
+                      {/* 状态标签 */}
+                      {isHistory && (
+                        <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
+                          已结束
+                        </span>
+                      )}
+                      {isUpcoming && (
+                        <span className="text-xs font-bold text-cyan-500 bg-cyan-50 px-2 py-0.5 rounded-full">
+                          未开始
+                        </span>
+                      )}
+                    </div>
+                    <div className={`font-bold text-xs mt-1 font-rounded ${isHistory ? 'text-gray-300' : 'text-gray-400'}`}>
                       总预算 ¥{totalBudget.toLocaleString()}
                     </div>
                   </div>
-                  <ChevronRight className="text-gray-300" strokeWidth={3} />
+                  <ChevronRight className={isHistory ? 'text-gray-300' : 'text-gray-300'} strokeWidth={3} />
                 </div>
               )
             })}
@@ -260,6 +332,25 @@ const BudgetSetupView = ({
             )}
           </div>
         </div>
+
+        {/* SECTION 5: 退出登录 */}
+        {currentUser && onLogout && (
+          <div className="mt-8 mb-8">
+            <div className="text-center mb-4">
+              <p className="text-gray-400 text-sm">
+                当前账号：<span className="font-bold text-gray-500">{currentUser.nickname || currentUser.username}</span>
+              </p>
+            </div>
+            
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] border-b-4 border-red-600 active:border-b-0 active:translate-y-1"
+            >
+              <LogOut size={20} strokeWidth={2.5} />
+              退出登录
+            </button>
+          </div>
+        )}
       </div>
       
       {/* 计算器弹窗 */}
@@ -272,6 +363,17 @@ const BudgetSetupView = ({
           showNote={false}
         />
       )}
+
+      {/* 退出登录确认弹窗 */}
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        title="退出登录"
+        message="确定要退出当前账号吗？"
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+        confirmText="退出"
+        confirmVariant="danger"
+      />
       
       <LoadingOverlay isLoading={isSaving} />
     </PageContainer>
