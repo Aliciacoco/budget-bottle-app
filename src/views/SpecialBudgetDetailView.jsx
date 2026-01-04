@@ -59,8 +59,10 @@ const SpecialBudgetDetailView = ({
     }
   }, [budget.id]);
   
-  // 初始加载
+  // 初始加载 - 防止自动滚动
   useEffect(() => {
+    // 保存当前滚动位置并强制回到顶部
+    window.scrollTo(0, 0);
     loadItems();
   }, [loadItems]);
   

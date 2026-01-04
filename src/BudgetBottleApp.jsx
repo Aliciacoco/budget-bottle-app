@@ -1,5 +1,5 @@
 // BudgetBottleApp.jsx - 主应用文件
-// 功能：周结算动画、夜间效果、核心导航
+// 功能：周结算动画、夜间效果、核心导航、结算倒计时
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, ChevronRight } from 'lucide-react';
@@ -59,6 +59,57 @@ const colors = {
 // ===== 静默日志（生产环境可关闭） =====
 const DEBUG = false;
 const log = (...args) => DEBUG && console.log(...args);
+
+// ===== 结算倒计时 Hook =====
+const useSettlementCountdown = (weekInfo) => {
+  const [timeLeft, setTimeLeft] = useState({ 
+    hours: 0, minutes: 0, seconds: 0, 
+    totalSeconds: 0, isCountdownActive: false 
+  });
+  
+  useEffect(() => {
+    if (!weekInfo?.weekEnd) return;
+    
+    const calculateTimeLeft = () => {
+      const now = new Date();
+      const diff = weekInfo.weekEnd.getTime() - now.getTime();
+      
+      if (diff <= 0) {
+        return { hours: 0, minutes: 0, seconds: 0, totalSeconds: 0, isCountdownActive: false };
+      }
+      
+      const totalSeconds = Math.floor(diff / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      
+      // 只在6小时内激活倒计时
+      const SIX_HOURS = 6 * 60 * 60;
+      const isCountdownActive = totalSeconds <= SIX_HOURS;
+      
+      return { hours, minutes, seconds, totalSeconds, isCountdownActive };
+    };
+    
+    setTimeLeft(calculateTimeLeft());
+    
+    const timer = setInterval(() => {
+      const newTimeLeft = calculateTimeLeft();
+      setTimeLeft(newTimeLeft);
+      
+      if (newTimeLeft.totalSeconds <= 0) {
+        clearInterval(timer);
+      }
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [weekInfo?.weekEnd?.getTime()]);
+  
+  const formattedTime = timeLeft.isCountdownActive
+    ? `${String(timeLeft.hours).padStart(2, '0')}:${String(timeLeft.minutes).padStart(2, '0')}:${String(timeLeft.seconds).padStart(2, '0')}`
+    : null;
+  
+  return { ...timeLeft, formattedTime };
+};
 
 // ===== 自动结算工具函数 =====
 const getPastWeekKeys = (currentWeekInfo, weeksToCheck = 4) => {
@@ -183,6 +234,9 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
   const cloudRef = useRef(null);
   const poolRef = useRef(null);
   const hasAutoSettled = useRef(false);
+  
+  // ===== 结算倒计时 =====
+  const { isCountdownActive, formattedTime } = useSettlementCountdown(weekInfo);
   
   // ===== 计算值 =====
   const weeklySpent = transactions.reduce((sum, t) => sum + t.amount, 0);
@@ -326,13 +380,15 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
     const interval = setInterval(() => {
       setSubtitleOpacity(0);
       setTimeout(() => {
-        setSubtitleIndex(prev => (prev + 1) % 2);
+        // 根据是否有倒计时决定轮播数量
+        const count = isCountdownActive ? 3 : 2;
+        setSubtitleIndex(prev => (prev + 1) % count);
         setSubtitleOpacity(1);
       }, 500);
     }, 5000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [isCountdownActive]);
   
   // ===== 夜间模式检测 =====
   useEffect(() => {
@@ -490,10 +546,17 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
   
   // ===== 首页渲染 =====
   const renderHomeView = () => {
-    const subtitles = [
-      `预算 ¥${budgetAmount.toLocaleString()}，已用 ¥${weeklySpent.toLocaleString()}`,
-      `${weekInfo.isoYear || weekInfo.year}年 第${weekInfo.isoWeekNumber || weekInfo.weekNumber}周`
-    ];
+    // 副标题数组 - 倒计时作为第三个轮播项
+    const subtitles = isCountdownActive 
+      ? [
+          `预算 ¥${budgetAmount.toLocaleString()}，已用 ¥${weeklySpent.toLocaleString()}`,
+          `${weekInfo.isoYear || weekInfo.year}年 第${weekInfo.isoWeekNumber || weekInfo.weekNumber}周`,
+          `距结算 ${formattedTime}`
+        ]
+      : [
+          `预算 ¥${budgetAmount.toLocaleString()}，已用 ¥${weeklySpent.toLocaleString()}`,
+          `${weekInfo.isoYear || weekInfo.year}年 第${weekInfo.isoWeekNumber || weekInfo.weekNumber}周`
+        ];
     
     if (isInitialLoading) {
       return (
@@ -532,7 +595,11 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
           .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
-          .home-container { min-height: 100vh; min-height: 100dvh; }
+          .home-container { 
+            min-height: 100vh; 
+            min-height: 100dvh; 
+            overflow: hidden;
+          }
           @keyframes twinkle {
             0%, 100% { opacity: 0.3; transform: scale(1); }
             50% { opacity: 1; transform: scale(1.2); }
@@ -572,6 +639,7 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
             </div>
           )}
           
+          {/* 设置按钮 */}
           <div className="absolute top-8 right-6 z-20">
             <button 
               onClick={() => navigateTo('budgetSetup')} 
@@ -585,6 +653,7 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
             </button>
           </div>
           
+          {/* 专项预算悬浮图标 */}
           {pinnedBudgets.length > 0 && (
             <DraggableBudgetIcons
               budgets={pinnedBudgets}
@@ -594,7 +663,10 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
             />
           )}
           
+          {/* 主内容区 */}
           <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
+
+            
             <div 
               className="text-center cursor-pointer active:opacity-80" 
               style={{ marginBottom: '50px' }}

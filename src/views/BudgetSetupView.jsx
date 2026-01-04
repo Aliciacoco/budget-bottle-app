@@ -1,18 +1,14 @@
 // BudgetSetupView.jsx - 预算设置页面
-// 修复：月预算输入改为计算器模式，统一金额输入框样式
-// 新增：专项支出历史/进行中状态标识
+// 优化：彻底修复点击后选中状态不消失的问题（移除 sticky hover）
 
-import React, { useState } from 'react';
-import { Plus, Calendar, ChevronRight, Target, ArrowLeft, LogOut, Clock } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Plus, ChevronDown, ArrowLeft, LogOut, Minus, Check } from 'lucide-react';
 import { saveWeeklyBudget } from '../api';
 import { getFloatingIcon } from '../constants/floatingIcons';
 import Calculator from '../components/CalculatorModal';
 
-// 导入设计系统组件
 import { 
   PageContainer, 
-  DuoButton,
-  AmountInput,
   LoadingOverlay,
   ConfirmModal
 } from '../components/design-system';
@@ -22,32 +18,48 @@ const getBudgetStatus = (budget) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // 没有日期，默认进行中
-  if (!budget.startDate && !budget.endDate) {
-    return 'ongoing';
-  }
+  if (!budget.startDate && !budget.endDate) return 'ongoing';
   
-  const startDate = budget.startDate ? new Date(budget.startDate) : null;
   const endDate = budget.endDate ? new Date(budget.endDate) : null;
+  const startDate = budget.startDate ? new Date(budget.startDate) : null;
   
-  // 有结束日期且已过期
-  if (endDate && endDate < today) {
-    return 'history';
-  }
-  
-  // 有开始日期但还没开始
-  if (startDate && startDate > today) {
-    return 'upcoming';
-  }
+  if (endDate && endDate < today) return 'history';
+  if (startDate && startDate > today) return 'upcoming';
   
   return 'ongoing';
+};
+
+// 云朵卡片组件
+const CloudCard = ({ children }) => {
+  const cloudPath = "M170.621 38C201.558 38 228.755 53.2859 244.555 76.4834L245.299 77.5938L245.306 77.6035C247.53 81.0058 251.079 83.3252 255.11 84.0352L255.502 84.0986L255.511 84.0996C299.858 90.8163 334 127.546 334 172.283C334 221.589 294.443 261.625 245.621 261.625H104.896L104.79 261.619C61.1843 259.33 26 226.502 26 185.76C26 154.771 46.4474 128.375 75.3525 116.578L75.3594 116.575C79.8465 114.754 83.1194 110.742 84.1465 105.889C92.3483 67.057 128.005 38.0001 170.621 38Z";
+  
+  return (
+    <div className="relative w-full" style={{ maxWidth: '260px' }}>
+      <svg 
+        viewBox="26 38 308 224"
+        className="w-full h-auto"
+        style={{ filter: 'drop-shadow(0 4px 12px rgba(6, 182, 212, 0.25))' }}
+      >
+        <defs>
+          <linearGradient id="cloudGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#22D3EE" />
+            <stop offset="100%" stopColor="#06B6D4" />
+          </linearGradient>
+        </defs>
+        <path d={cloudPath} fill="url(#cloudGradient)" />
+      </svg>
+      
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        {children}
+      </div>
+    </div>
+  );
 };
 
 const BudgetSetupView = ({ 
   monthlyBudget = 3000, 
   setMonthlyBudget, 
   fixedExpenses = [], 
-  setFixedExpenses, 
   specialBudgets = [],
   specialBudgetItems = {},
   weekInfo,
@@ -60,40 +72,63 @@ const BudgetSetupView = ({
 }) => {
   const [localMonthlyBudget, setLocalMonthlyBudget] = useState(monthlyBudget || 3000);
   const [isSaving, setIsSaving] = useState(false);
-  const [showAllExpenses, setShowAllExpenses] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showFixedExpenses, setShowFixedExpenses] = useState(false);
+  
+  const saveTimer = useRef(null);
 
+  // 计算
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
   const totalFixedExpenses = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const currentMonthlyBudget = localMonthlyBudget || 3000;
-  const availableForWeekly = currentMonthlyBudget - totalFixedExpenses;
+  const availableForWeekly = Math.max(0, localMonthlyBudget - totalFixedExpenses);
   const suggestedWeeklyBudget = Math.floor(availableForWeekly / 4);
+  const dailyBudget = Math.floor(suggestedWeeklyBudget / 7);
   
-  const displayedExpenses = showAllExpenses ? fixedExpenses : (fixedExpenses || []).slice(0, 3);
-  const hasMoreExpenses = (fixedExpenses || []).length > 3;
+  const currentWeeklyBudget = weeklyBudget?.amount || 0;
+  const showApplyButton = suggestedWeeklyBudget !== currentWeeklyBudget;
+
+  const saveMonthlyBudget = (value) => {
+    if (setMonthlyBudget) setMonthlyBudget(value);
+    localStorage.setItem('monthly_budget', value.toString());
+  };
 
   const handleMonthlyBudgetChange = (value) => {
     setLocalMonthlyBudget(value);
-    if (setMonthlyBudget) setMonthlyBudget(value);
-    localStorage.setItem('monthly_budget', value.toString());
+    saveMonthlyBudget(value);
     setShowCalculator(false);
   };
 
-  const handleExpenseClick = (expense) => {
-    navigateTo('editFixedExpense', { editingExpense: expense });
+  // 快捷调节
+  const adjustBudget = (delta, e) => {
+    // 1. 阻止默认事件
+    if (e) e.preventDefault();
+    
+    // 2. 强制移除焦点 (核心修复步骤)
+    if (e && e.currentTarget) {
+      e.currentTarget.blur();
+    }
+    
+    const newValue = Math.max(0, localMonthlyBudget + delta);
+    setLocalMonthlyBudget(newValue);
+    
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+    }
+    
+    saveTimer.current = setTimeout(() => {
+      saveMonthlyBudget(newValue);
+      saveTimer.current = null;
+    }, 300);
   };
 
-  const handleAddExpense = () => {
-    navigateTo('editFixedExpense', { editingExpense: {} });
-  };
-
-  const handleSetWeeklyBudget = async (amount) => {
-    if (!amount || amount <= 0) return;
+  const handleApplyWeeklyBudget = async () => {
+    if (!weekInfo || suggestedWeeklyBudget < 0) return;
+    
     setIsSaving(true);
     try {
-      const result = await saveWeeklyBudget(weekInfo.weekKey, amount);
-      if (result.success) {
+      const result = await saveWeeklyBudget(weekInfo.weekKey, suggestedWeeklyBudget);
+      if (result.success && setWeeklyBudget) {
         setWeeklyBudget(result.data);
       }
     } finally {
@@ -106,17 +141,16 @@ const BudgetSetupView = ({
     if (onLogout) onLogout();
   };
 
+  const userName = currentUser?.nickname || currentUser?.username || '';
+
   return (
-    <PageContainer bg="gray" className="relative pb-8">
-      {/* 引入 M PLUS Rounded 1c 字体 */}
+    <PageContainer bg="gray" className="relative pb-6">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded {
-          font-family: 'M PLUS Rounded 1c', sans-serif;
-        }
+        .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
 
-      {/* 固定透明导航栏 */}
+      {/* 导航栏 */}
       <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <button 
@@ -128,232 +162,242 @@ const BudgetSetupView = ({
         </div>
       </div>
 
-      {/* 主内容区 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
+      <div className="pt-20 px-6 max-w-lg mx-auto">
         
-        {/* 页面标题 - 融入用户昵称 */}
-        <div className="text-center mb-2">
-          <h1 className="text-2xl font-extrabold text-gray-800">
-            {currentUser ? `${currentUser.nickname || currentUser.username}的预算` : '预算设置'}
-          </h1>
-          <p className="text-gray-400 font-medium text-sm mt-1">配置你的月度预算计划</p>
-        </div>
-
-        {/* SECTION 1: 每月总预算 - 使用计算器模式 */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm">
-          <label className="text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 block">每月总收入/预算</label>
-          <AmountInput
-            value={localMonthlyBudget}
-            onClick={() => setShowCalculator(true)}
-          />
-        </div>
-
-        {/* SECTION 2: 固定支出 */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <label className="text-gray-400 font-bold uppercase tracking-wider text-xs">固定支出</label>
-              <div className="text-amber-500 font-extrabold text-xl mt-1 font-rounded">
-                ¥{totalFixedExpenses.toLocaleString()} <span className="text-gray-400 text-sm font-medium">/月</span>
-              </div>
-            </div>
+        {/* ===== 流程图区域 ===== */}
+        <div className="flex flex-col items-center">
+          
+          {/* 1. 每月总预算 */}
+          <div className="text-center mb-1">
+            <span className="text-gray-400 text-xs font-medium">{userName}的每月总预算</span>
+          </div>
+          
+          <div className="flex items-center gap-3 mb-1">
+            {/* 减号按钮优化：
+                1. 移除了 hover 类（避免手机上点击后颜色不消失）
+                2. 改用 active 类（仅按下时变色）
+                3. 添加 style 移除点击高亮色块
+            */}
             <button 
-              onClick={handleAddExpense}
-              className="w-10 h-10 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
+              onClick={(e) => adjustBudget(-500, e)}
+              className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-400 active:border-cyan-400 active:text-cyan-500 active:scale-95 transition-all focus:outline-none focus:ring-0"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              <Plus size={20} strokeWidth={2.5} />
+              <Minus size={16} strokeWidth={2} />
+            </button>
+            
+            <button
+              onClick={() => setShowCalculator(true)}
+              className="flex items-baseline gap-1 active:opacity-70 active:scale-95 transition-all focus:outline-none"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <span className="text-gray-400 text-xl font-bold">¥</span>
+              <span className="text-gray-800 text-4xl font-extrabold font-rounded">
+                {localMonthlyBudget.toLocaleString()}
+              </span>
+            </button>
+            
+            {/* 加号按钮优化 */}
+            <button 
+              onClick={(e) => adjustBudget(500, e)}
+              className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-400 active:border-cyan-400 active:text-cyan-500 active:scale-95 transition-all focus:outline-none focus:ring-0"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <Plus size={16} strokeWidth={2} />
             </button>
           </div>
           
-          <div className="space-y-3">
-            {(fixedExpenses || []).length === 0 ? (
-              <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center text-gray-400 font-bold">
-                还没有固定支出
-              </div>
-            ) : (
-              displayedExpenses.map(expense => (
-                <div 
-                  key={expense.id}
-                  onClick={() => handleExpenseClick(expense)}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer active:bg-gray-100 active:scale-[0.99] transition-all"
-                >
-                  <div className="flex-1">
-                    <div className="font-bold text-gray-700 text-lg">{expense.name}</div>
-                    {expense.expireDate ? (
-                      <div className="text-xs font-bold text-gray-400 flex items-center gap-1 mt-1">
-                        <Calendar size={12} strokeWidth={2.5} />
-                        {expense.expireDate} 到期
-                      </div>
-                    ) : (
-                      <div className="text-xs font-bold text-gray-300 mt-1">无限期</div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <span className="font-extrabold text-gray-700 text-lg font-rounded">¥{expense.amount.toLocaleString()}</span>
-                    <ChevronRight 
-                      size={20} 
-                      className="text-gray-300"
-                      strokeWidth={2.5}
-                    />
-                  </div>
-                </div>
-              ))
-            )}
-            
-            {hasMoreExpenses && (
-              <button
-                onClick={() => setShowAllExpenses(!showAllExpenses)}
-                className="w-full py-3 text-gray-400 font-bold text-sm hover:bg-gray-50 rounded-xl transition-colors"
-              >
-                {showAllExpenses ? '收起' : `查看全部 (${fixedExpenses.length})`}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION 3: 建议卡片 */}
-        <div className="bg-cyan-500 rounded-3xl p-6 text-white relative overflow-hidden shadow-sm">
-          <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/20 rounded-full"></div>
-          <div className="relative z-10">
-            <h2 className="font-extrabold text-lg flex items-center gap-2 mb-4">
-              <Target className="text-cyan-200" size={24} />
-              建议周预算
-            </h2>
-            
-            <div className="bg-black/10 rounded-2xl p-4 space-y-2 mb-4 backdrop-blur-sm">
-              <div className="flex justify-between text-cyan-100 font-medium text-sm">
-                <span>月预算 - 固定支出</span>
-                <span className="font-rounded">¥{availableForWeekly.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                <span className="text-cyan-100 font-medium">÷ 4周 ≈</span>
-                <span className="text-3xl font-extrabold text-white font-rounded">¥{suggestedWeeklyBudget.toLocaleString()}</span>
+          <div className="w-px h-4 bg-gray-200" />
+          
+          {/* 2. 固定支出 */}
+          <button
+            onClick={() => setShowFixedExpenses(!showFixedExpenses)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-gray-100 bg-white active:border-gray-200 active:scale-[0.98] transition-all mb-1 shadow-sm focus:outline-none"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
+          >
+            <div className="text-left">
+              <span className="text-gray-400 text-xs font-medium">固定支出</span>
+              <div className="text-gray-700 font-extrabold font-rounded">
+                ¥{totalFixedExpenses.toLocaleString()}
               </div>
             </div>
-
-            {weeklyBudget && weeklyBudget.amount !== suggestedWeeklyBudget && (
-              <button
-                onClick={() => handleSetWeeklyBudget(suggestedWeeklyBudget)}
-                className="w-full py-3 bg-white text-cyan-500 font-extrabold rounded-xl active:scale-[0.98] transition-all"
-              >
-                应用这个预算
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION 4: 专项支出 - 带历史/进行中状态 */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <label className="text-gray-400 font-bold uppercase tracking-wider text-xs">专项支出</label>
-            <button 
-              onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
-              className="w-10 h-10 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-200 active:scale-95 transition-all"
-            >
-              <Plus size={20} strokeWidth={2.5} />
-            </button>
-          </div>
-           
-          <div className="space-y-3">
-            {(specialBudgets || []).map(budget => {
-              const iconConfig = getFloatingIcon(budget.icon);
-              const IconComponent = iconConfig.icon;
-              const iconColor = iconConfig.color;
-              const items = specialBudgetItems[budget.id] || [];
-              const totalBudget = items.reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
-              
-              // 获取状态
-              const status = getBudgetStatus(budget);
-              const isHistory = status === 'history';
-              const isUpcoming = status === 'upcoming';
-              
-              return (
+            <ChevronDown 
+              size={16} 
+              className={`text-gray-300 transition-transform ml-1 ${showFixedExpenses ? 'rotate-180' : ''}`} 
+            />
+          </button>
+          
+          {/* 固定支出列表 */}
+          {showFixedExpenses && (
+            <div className="w-full max-w-[240px] mb-3 space-y-2">
+              {enabledExpenses.map(expense => (
                 <div 
-                  key={budget.id}
-                  onClick={() => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
-                  className={`cursor-pointer rounded-2xl p-4 flex items-center gap-4 active:scale-[0.99] transition-all ${
-                    isHistory ? 'bg-gray-100 opacity-70' : 'bg-gray-50 active:bg-gray-100'
-                  }`}
+                  key={expense.id}
+                  onClick={() => navigateTo('editFixedExpense', { editingExpense: expense })}
+                  className="flex items-center justify-between px-3 py-2 bg-white rounded-lg cursor-pointer active:bg-gray-50 active:scale-[0.99] transition-all shadow-sm text-sm"
                 >
-                  {/* 图标区域 - 历史状态置灰 */}
-                  <div className="relative">
-                    <div 
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        isHistory ? 'bg-gray-200' : ''
+                  <span className="text-gray-600">{expense.name}</span>
+                  <span className="text-gray-700 font-bold font-rounded">¥{expense.amount.toLocaleString()}</span>
+                </div>
+              ))}
+              <button
+                onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
+                className="w-full py-2 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 font-medium text-xs active:border-cyan-300 active:text-cyan-500 transition-all flex items-center justify-center gap-1 bg-white"
+              >
+                <Plus size={14} /> 添加
+              </button>
+            </div>
+          )}
+          
+          <div className="w-px h-4 bg-gray-200" />
+          
+          {/* 3. 建议周预算 */}
+          <CloudCard>
+            <div className="text-center">
+              <div className="inline-flex items-center gap-1 bg-white/20 rounded-full px-2 py-0.5 mb-1">
+                <span className="text-sm">☁️</span>
+                <span className="text-white/90 text-xs font-bold">建议周预算</span>
+              </div>
+              
+              <div className="mb-0.5">
+                <span className="text-white/60 text-lg font-bold">¥</span>
+                <span className="text-white text-3xl font-extrabold font-rounded">
+                  {suggestedWeeklyBudget.toLocaleString()}
+                </span>
+              </div>
+              
+              <p className="text-white/60 text-xs font-medium">
+                ≈ 每天 ¥{dailyBudget}
+              </p>
+            </div>
+          </CloudCard>
+          
+          {/* 应用按钮 */}
+          {showApplyButton && (
+            <button
+              onClick={handleApplyWeeklyBudget}
+              className="mt-3 px-6 py-2 bg-cyan-500 text-white font-bold rounded-xl flex items-center gap-2 active:bg-cyan-600 active:scale-95 transition-all shadow-md"
+            >
+              <Check size={16} strokeWidth={3} />
+              应用到本周
+            </button>
+          )}
+          
+          {!showApplyButton && currentWeeklyBudget > 0 && (
+            <p className="mt-2 text-gray-400 text-xs">
+              ✓ 已应用到本周
+            </p>
+          )}
+          
+          {/* 过渡说明 */}
+          <div className="text-center my-4">
+            <p className="text-gray-300 text-xs">
+              ─ ─ ─  以下是专项支出  ─ ─ ─
+            </p>
+          </div>
+          
+          {/* 4. 专项支出 */}
+          <div className="w-full bg-white rounded-2xl p-4 shadow-sm mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-gray-400 text-xs font-bold">专项支出</span>
+              <button
+                onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
+                className="w-7 h-7 bg-gray-100 text-gray-400 rounded-lg flex items-center justify-center active:bg-gray-200 active:scale-95 transition-all"
+              >
+                <Plus size={14} strokeWidth={2.5} />
+              </button>
+            </div>
+            
+            {specialBudgets.length === 0 ? (
+              <div 
+                onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
+                className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer active:border-cyan-300 active:bg-cyan-50/30 transition-all"
+              >
+                <p className="text-gray-400 font-bold text-sm">旅行、大件购物...</p>
+                <p className="text-gray-300 text-xs mt-0.5">点击添加</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {specialBudgets.map(budget => {
+                  const iconConfig = getFloatingIcon(budget.icon);
+                  const IconComponent = iconConfig.icon;
+                  const iconColor = iconConfig.color;
+                  const items = specialBudgetItems[budget.id] || [];
+                  const totalBudget = items.reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
+                  const status = getBudgetStatus(budget);
+                  const isHistory = status === 'history';
+                  
+                  return (
+                    <div
+                      key={budget.id}
+                      onClick={() => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+                      className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer active:scale-[0.99] transition-all ${
+                        isHistory 
+                          ? 'bg-gray-100 opacity-60' 
+                          : 'bg-gray-50 active:bg-gray-100'
                       }`}
-                      style={{ 
-                        backgroundColor: isHistory ? undefined : iconColor + '15'
-                      }}
                     >
                       <div 
-                        className="w-8 h-8"
+                        className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ 
-                          filter: isHistory ? 'grayscale(100%)' : 'none',
-                          opacity: isHistory ? 0.5 : 1
+                          backgroundColor: isHistory ? '#E5E7EB' : iconColor + '20',
                         }}
                       >
-                        <IconComponent className="w-full h-full" />
+                        <div 
+                          className="w-6 h-6" 
+                          style={{ 
+                            filter: isHistory ? 'grayscale(100%)' : 'none',
+                            opacity: isHistory ? 0.5 : 1 
+                          }}
+                        >
+                          <IconComponent className="w-full h-full" />
+                        </div>
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-bold text-sm truncate ${isHistory ? 'text-gray-400' : 'text-gray-700'}`}>
+                            {budget.name}
+                          </span>
+                          {isHistory && (
+                            <span className="text-xs text-gray-400 bg-gray-200 px-1 py-0.5 rounded flex-shrink-0">
+                              历史
+                            </span>
+                          )}
+                        </div>
+                        <div className={`text-sm font-extrabold font-rounded ${isHistory ? 'text-gray-400' : 'text-gray-800'}`}>
+                          ¥{totalBudget.toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                    
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-extrabold text-lg ${isHistory ? 'text-gray-400' : 'text-gray-700'}`}>
-                        {budget.name}
-                      </span>
-                      {/* 状态标签 */}
-                      {isHistory && (
-                        <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
-                          已结束
-                        </span>
-                      )}
-                      {isUpcoming && (
-                        <span className="text-xs font-bold text-cyan-500 bg-cyan-50 px-2 py-0.5 rounded-full">
-                          未开始
-                        </span>
-                      )}
-                    </div>
-                    <div className={`font-bold text-xs mt-1 font-rounded ${isHistory ? 'text-gray-300' : 'text-gray-400'}`}>
-                      总预算 ¥{totalBudget.toLocaleString()}
-                    </div>
-                  </div>
-                  <ChevronRight className={isHistory ? 'text-gray-300' : 'text-gray-300'} strokeWidth={3} />
-                </div>
-              )
-            })}
-            
-            {(specialBudgets || []).length === 0 && (
-              <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center text-gray-400 font-bold">
-                还没有远航计划
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* SECTION 5: 退出登录 */}
+        {/* 退出登录 */}
         {currentUser && onLogout && (
-          <div className="mt-8 mb-8">
-            <div className="text-center mb-4">
-              <p className="text-gray-400 text-sm">
-                当前账号：<span className="font-bold text-gray-500">{currentUser.nickname || currentUser.username}</span>
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="text-center mb-2">
+              <p className="text-gray-400 text-xs">
+                当前账号：<span className="font-bold text-gray-500">{userName}</span>
               </p>
             </div>
             
             <button
               onClick={() => setShowLogoutConfirm(true)}
-              className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] border-b-4 border-red-600 active:border-b-0 active:translate-y-1"
+              className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] border-b-4 border-red-600 active:border-b-0 active:translate-y-1"
             >
-              <LogOut size={20} strokeWidth={2.5} />
+              <LogOut size={18} strokeWidth={2.5} />
               退出登录
             </button>
           </div>
         )}
       </div>
       
-      {/* 计算器弹窗 */}
+      {/* 计算器 */}
       {showCalculator && (
         <Calculator
           value={localMonthlyBudget}
@@ -364,7 +408,7 @@ const BudgetSetupView = ({
         />
       )}
 
-      {/* 退出登录确认弹窗 */}
+      {/* 退出确认 */}
       <ConfirmModal
         isOpen={showLogoutConfirm}
         title="退出登录"

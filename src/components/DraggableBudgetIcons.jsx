@@ -1,5 +1,6 @@
 // DraggableBudgetIcons.jsx - 首页可拖拽的独立预算图标
 // 核心修复：使用云端数据库存储位置，实现多设备同步
+// Bug修复：滚动同步问题 - 图标使用相对于云朵的偏移量定位
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Check, X, Move, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
@@ -34,11 +35,13 @@ const DraggableBudgetIcons = ({ budgets = [], onBudgetClick, cloudRef, setSpecia
   const SCALE_STEP = 0.2;
   const ICON_SIZE = 56;
 
-  // 监听云朵位置变化
+  // 监听云朵位置变化 - 修复：不监听 scroll，使用 absolute 定位
   useEffect(() => {
     const updateCloudCenter = () => {
       if (cloudRef?.current) {
         const rect = cloudRef.current.getBoundingClientRect();
+        // 获取相对于视口的位置，但我们需要相对于父容器的位置
+        // 由于首页 overflow:hidden，实际上不会滚动，所以 getBoundingClientRect 是准确的
         setCloudCenter({
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2
@@ -48,7 +51,6 @@ const DraggableBudgetIcons = ({ budgets = [], onBudgetClick, cloudRef, setSpecia
     
     updateCloudCenter();
     window.addEventListener('resize', updateCloudCenter);
-    window.addEventListener('scroll', updateCloudCenter);
     
     let observer;
     if (cloudRef?.current && typeof ResizeObserver !== 'undefined') {
@@ -60,7 +62,6 @@ const DraggableBudgetIcons = ({ budgets = [], onBudgetClick, cloudRef, setSpecia
     
     return () => {
       window.removeEventListener('resize', updateCloudCenter);
-      window.removeEventListener('scroll', updateCloudCenter);
       observer?.disconnect();
       clearTimeout(timer);
     };
@@ -465,7 +466,7 @@ const DraggableBudgetIcons = ({ budgets = [], onBudgetClick, cloudRef, setSpecia
             style={{
               left: `${pixelPos.x}px`,
               top: `${pixelPos.y}px`,
-              zIndex: isEditing ? 30 : 15,  // 修复：默认 15，高于云朵区域的 z-10
+              zIndex: isEditing ? 30 : 15,
             }}
             onTouchStart={(e) => handleTouchStart(e, budget.id)}
             onTouchEnd={(e) => handleTouchEnd(e, budget)}
