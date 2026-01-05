@@ -1,5 +1,5 @@
 // CalculatorModal.jsx - 计算器弹窗组件
-// 修复：触控区域、运算符替换、添加除号、4列布局
+// 修复：备注输入框点击无效问题
 
 import React, { useState, useCallback } from 'react';
 
@@ -119,10 +119,16 @@ const Calculator = ({
     onClose();
   }, [calculate, showNote, onNoteChange, note, onChange, onClose]);
   
-  // 阻止事件冒泡
+  // 阻止事件冒泡（用于按钮等，会阻止默认行为）
   const stopPropagation = useCallback((e) => {
     e.stopPropagation();
     e.preventDefault();
+  }, []);
+  
+  // 【修复】仅阻止冒泡，不阻止默认行为（用于输入框，允许获得焦点）
+  const stopPropagationOnly = useCallback((e) => {
+    e.stopPropagation();
+    // 不调用 preventDefault()，允许输入框正常获得焦点和打开键盘
   }, []);
   
   // 按钮点击处理
@@ -177,6 +183,12 @@ const Calculator = ({
           touch-action: manipulation;
           -webkit-tap-highlight-color: transparent;
         }
+        /* 输入框需要允许正常交互 */
+        .calc-panel input {
+          touch-action: auto;
+          -webkit-user-select: text;
+          user-select: text;
+        }
         /* 防止触摸穿透 */
         .calc-overlay {
           touch-action: none;
@@ -206,7 +218,7 @@ const Calculator = ({
           </div>
         </div>
         
-        {/* 备注输入框 */}
+        {/* 备注输入框 - 【修复】使用 stopPropagationOnly 而不是 stopPropagation */}
         {showNote && (
           <div className="px-4 pt-4 pb-2">
             <input 
@@ -215,8 +227,10 @@ const Calculator = ({
               onChange={(e) => setNote(e.target.value)} 
               placeholder="备注：超市、外卖..." 
               className="w-full px-4 py-3 bg-gray-100 border-2 border-gray-200 rounded-2xl text-gray-700 font-bold placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-              onClick={stopPropagation}
-              onTouchEnd={stopPropagation}
+              onClick={stopPropagationOnly}
+              onTouchStart={stopPropagationOnly}
+              onTouchEnd={stopPropagationOnly}
+              onFocus={stopPropagationOnly}
             />
           </div>
         )}

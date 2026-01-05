@@ -173,7 +173,7 @@ const autoSettlePastWeeks = async (currentWeekInfo) => {
 };
 
 // ===== 主组件 =====
-const BudgetBottleApp = ({ currentUser, onLogout }) => {
+const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 基础状态 =====
   const [currentView, setCurrentView] = useState('home');
   const [viewParams, setViewParams] = useState({});
@@ -833,6 +833,7 @@ const BudgetBottleApp = ({ currentUser, onLogout }) => {
             isDataReady={isDataReady && isSecondaryLoaded}
             currentUser={currentUser}
             onLogout={onLogout}
+            onSwitchAccount={onSwitchAccount}  // 新增这一行
           />
         );
       

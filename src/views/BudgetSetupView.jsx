@@ -1,9 +1,10 @@
 // BudgetSetupView.jsx - 预算设置页面
-// 优化：彻底修复点击后选中状态不消失的问题（移除 sticky hover）
+// 支持匿名用户提示 + 绑定账号功能
 
 import React, { useState, useRef } from 'react';
-import { Plus, ChevronDown, ArrowLeft, LogOut, Minus, Check } from 'lucide-react';
+import { Plus, ChevronDown, ArrowLeft, LogOut, Minus, Check, UserCircle, CloudUpload } from 'lucide-react';
 import { saveWeeklyBudget } from '../api';
+import { isAnonymousUser } from '../auth';
 import { getFloatingIcon } from '../constants/floatingIcons';
 import Calculator from '../components/CalculatorModal';
 
@@ -68,7 +69,8 @@ const BudgetSetupView = ({
   navigateTo, 
   onBack,
   currentUser,
-  onLogout
+  onLogout,
+  onSwitchAccount
 }) => {
   const [localMonthlyBudget, setLocalMonthlyBudget] = useState(monthlyBudget || 3000);
   const [isSaving, setIsSaving] = useState(false);
@@ -77,6 +79,9 @@ const BudgetSetupView = ({
   const [showFixedExpenses, setShowFixedExpenses] = useState(false);
   
   const saveTimer = useRef(null);
+  
+  // 是否为匿名用户
+  const isAnonymous = isAnonymousUser();
 
   // 计算
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
@@ -99,22 +104,14 @@ const BudgetSetupView = ({
     setShowCalculator(false);
   };
 
-  // 快捷调节
   const adjustBudget = (delta, e) => {
-    // 1. 阻止默认事件
     if (e) e.preventDefault();
-    
-    // 2. 强制移除焦点 (核心修复步骤)
-    if (e && e.currentTarget) {
-      e.currentTarget.blur();
-    }
+    if (e && e.currentTarget) e.currentTarget.blur();
     
     const newValue = Math.max(0, localMonthlyBudget + delta);
     setLocalMonthlyBudget(newValue);
     
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
     
     saveTimer.current = setTimeout(() => {
       saveMonthlyBudget(newValue);
@@ -169,15 +166,12 @@ const BudgetSetupView = ({
           
           {/* 1. 每月总预算 */}
           <div className="text-center mb-1">
-            <span className="text-gray-400 text-xs font-medium">{userName}的每月总预算</span>
+            <span className="text-gray-400 text-xs font-medium">
+              {isAnonymous ? '每月总预算' : `${userName}的每月总预算`}
+            </span>
           </div>
           
           <div className="flex items-center gap-3 mb-1">
-            {/* 减号按钮优化：
-                1. 移除了 hover 类（避免手机上点击后颜色不消失）
-                2. 改用 active 类（仅按下时变色）
-                3. 添加 style 移除点击高亮色块
-            */}
             <button 
               onClick={(e) => adjustBudget(-500, e)}
               className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-400 active:border-cyan-400 active:text-cyan-500 active:scale-95 transition-all focus:outline-none focus:ring-0"
@@ -197,7 +191,6 @@ const BudgetSetupView = ({
               </span>
             </button>
             
-            {/* 加号按钮优化 */}
             <button 
               onClick={(e) => adjustBudget(500, e)}
               className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-400 active:border-cyan-400 active:text-cyan-500 active:scale-95 transition-all focus:outline-none focus:ring-0"
@@ -377,24 +370,77 @@ const BudgetSetupView = ({
           </div>
         </div>
 
-        {/* 退出登录 */}
-        {currentUser && onLogout && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <div className="text-center mb-2">
-              <p className="text-gray-400 text-xs">
-                当前账号：<span className="font-bold text-gray-500">{userName}</span>
+        {/* ===== 账户区域 ===== */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm">
+          {/* 当前账户信息 */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+              isAnonymous ? 'bg-gray-100' : 'bg-cyan-100'
+            }`}>
+              <UserCircle size={28} className={isAnonymous ? 'text-gray-400' : 'text-cyan-500'} />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-gray-800">
+                {isAnonymous ? '本地用户' : (userName || '用户')}
+              </p>
+              <p className="text-sm text-gray-400">
+                {isAnonymous ? '数据仅保存在此设备' : `@${currentUser?.username}`}
               </p>
             </div>
-            
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] border-b-4 border-red-600 active:border-b-0 active:translate-y-1"
-            >
-              <LogOut size={18} strokeWidth={2.5} />
-              退出登录
-            </button>
           </div>
-        )}
+          
+          {/* 匿名用户提示 */}
+          {isAnonymous && (
+            <div className="mb-4 p-3 bg-cyan-50 rounded-xl">
+              <p className="text-cyan-600 text-sm text-center leading-relaxed">
+                ☁️ 登录账号可在多设备间同步数据
+              </p>
+            </div>
+          )}
+          
+          {/* 操作按钮 */}
+          <div className="space-y-2">
+            {/* 登录/切换账户按钮 */}
+            {onSwitchAccount && (
+              <button
+                onClick={onSwitchAccount}
+                className={`w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-bold transition-all active:scale-[0.98] ${
+                  isAnonymous 
+                    ? 'bg-cyan-500 hover:bg-cyan-600 text-white border-b-4 border-cyan-600 active:border-b-0 active:translate-y-1'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                }`}
+              >
+                {isAnonymous ? (
+                  <>
+                    <CloudUpload size={18} strokeWidth={2.5} />
+                    登录以同步数据
+                  </>
+                ) : (
+                  <>
+                    <UserCircle size={18} strokeWidth={2.5} />
+                    切换账号
+                  </>
+                )}
+              </button>
+            )}
+            
+            {/* 已登录用户显示退出按钮 */}
+            {!isAnonymous && onLogout && (
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-xl flex items-center justify-center gap-2 font-bold transition-all active:scale-[0.98]"
+              >
+                <LogOut size={18} strokeWidth={2.5} />
+                退出登录
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* 版本信息 */}
+        <div className="text-center py-6">
+          <p className="text-gray-300 text-xs">CloudPool v1.0.0</p>
+        </div>
       </div>
       
       {/* 计算器 */}
@@ -412,7 +458,7 @@ const BudgetSetupView = ({
       <ConfirmModal
         isOpen={showLogoutConfirm}
         title="退出登录"
-        message="确定要退出当前账号吗？"
+        message="退出后将回到本地模式，当前账号数据仍会保留在云端。"
         onConfirm={handleLogout}
         onCancel={() => setShowLogoutConfirm(false)}
         confirmText="退出"

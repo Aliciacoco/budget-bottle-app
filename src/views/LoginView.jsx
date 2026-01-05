@@ -1,11 +1,11 @@
 // LoginView.jsx - 登录页面
-// 简洁美观的登录界面
+// 支持从匿名状态绑定账号，可返回
 
 import React, { useState } from 'react';
-import { LogIn } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { login } from '../auth';
 
-const LoginView = ({ onLoginSuccess }) => {
+const LoginView = ({ onLoginSuccess, onBack, isAnonymous }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -27,7 +27,6 @@ const LoginView = ({ onLoginSuccess }) => {
     
     setIsLoading(true);
     
-    // 模拟网络延迟，提升体验
     await new Promise(resolve => setTimeout(resolve, 500));
     
     const result = login(username, password);
@@ -43,25 +42,47 @@ const LoginView = ({ onLoginSuccess }) => {
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-cyan-50 to-white flex flex-col">
-      {/* 引入字体 */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
       
+      {/* 返回按钮 - 仅在可返回时显示 */}
+      {onBack && (
+        <div className="px-6 pt-4">
+          <button 
+            onClick={onBack}
+            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
+          >
+            <ArrowLeft size={24} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
+      
       {/* 标题区域 */}
-      <div className="flex flex-col items-center justify-center px-6 pt-20 pb-8">
+      <div className="flex flex-col items-center justify-center px-6 pt-12 pb-8">
         <h1 className="text-4xl font-extrabold text-cyan-500 font-rounded mb-2">
           CloudPool
         </h1>
         <p className="text-gray-400 font-medium text-center">
-          周预算工具
+          {isAnonymous ? '登录以同步您的数据' : '周预算工具'}
         </p>
       </div>
       
       {/* 登录表单 */}
       <div className="px-6 pb-12">
         <div className="bg-white rounded-3xl p-6 shadow-lg shadow-cyan-100/50 max-w-sm mx-auto">
+          
+          {/* 匿名用户提示 */}
+          {isAnonymous && (
+            <div className="mb-4 p-3 bg-cyan-50 rounded-xl">
+              <p className="text-cyan-600 text-sm text-center leading-relaxed">
+                💡 登录后可在多设备间同步数据<br/>
+                当前本地数据将保留在此设备
+              </p>
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 账号输入 */}
             <div>
@@ -113,9 +134,7 @@ const LoginView = ({ onLoginSuccess }) => {
                   登录中...
                 </>
               ) : (
-                <>
-                  登录
-                </>
+                '登录'
               )}
             </button>
           </form>
