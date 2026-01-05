@@ -1,12 +1,10 @@
 // EditTransactionView.jsx - 编辑消费页面
-// 修复：金额输入使用计算器模式
 
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { updateTransaction, deleteTransaction } from '../api';
 import Calculator from '../components/CalculatorModal';
 
-// 导入设计系统组件
 import { 
   PageContainer,
   TransparentNavBar,
@@ -21,7 +19,7 @@ const EditTransactionView = ({
   editingTransaction, 
   weekInfo, 
   transactions, 
-  setTransactions, 
+  setTransactions,
   viewingTransactions, 
   setViewingTransactions 
 }) => {
@@ -30,13 +28,19 @@ const EditTransactionView = ({
   const [date, setDate] = useState(editingTransaction?.date?.replace(/\//g, '-') || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // 统一 Loading 状态，避免混乱
+  const [isLoading, setIsLoading] = useState(false); 
+  const [loadingText, setLoadingText] = useState(''); // 新增：用于显示是“保存中”还是“删除中”
 
   if (!editingTransaction) return null;
 
+  // --- 修改保存逻辑 ---
   const handleSubmit = async () => {
     if (!amount) return;
     setIsLoading(true);
+    setLoadingText('保存中...');
+    
     try {
       const result = await updateTransaction(
         editingTransaction.id, 
@@ -45,36 +49,65 @@ const EditTransactionView = ({
         description, 
         date.replace(/-/g, '/')
       );
+      
       if (result.success) {
-        setTransactions(transactions.map(t => t.id === editingTransaction.id ? result.data : t));
-        setViewingTransactions(viewingTransactions.map(t => t.id === editingTransaction.id ? result.data : t));
+        // 更新本地列表
+        const updater = t => t.id === editingTransaction.id ? result.data : t;
+        setTransactions(prev => prev.map(updater));
+        setViewingTransactions(prev => prev.map(updater));
+        
+        // 成功后返回
         window.history.back();
       } else { 
-        alert('保存失败: ' + result.error); 
+        alert('保存失败: ' + (result.error || '未知错误')); 
       }
+    } catch (error) {
+      alert('网络错误，请检查连接');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // --- 【关键修复】删除逻辑：改为等待服务器响应 ---
   const handleDelete = async () => {
+    if (!editingTransaction?.id) return;
+    const transactionId = editingTransaction.id;
+    
+    // 1. 关闭确认弹窗，开启全屏 Loading
     setShowDeleteConfirm(false);
     setIsLoading(true);
+    setLoadingText('正在删除...'); // 给用户明确反馈，正在和服务器通信
+    
     try {
-      const result = await deleteTransaction(editingTransaction.id);
-      if (result.success) {
-        setTransactions(transactions.filter(t => t.id !== editingTransaction.id));
-        setViewingTransactions(viewingTransactions.filter(t => t.id !== editingTransaction.id));
-        window.history.back();
-      } else { 
-        alert('删除失败: ' + result.error); 
+      // 2. 【关键】等待服务器真正的响应 (Await)
+      // 注意：确保你的 api.js 中 deleteTransaction 返回了 { success: true/false }
+      const result = await deleteTransaction(transactionId);
+      
+      // 3. 只有服务器说 OK 了，我们才更新界面
+      if (result && result.success) {
+        
+        // 更新父组件状态（让上一页的列表移除这项）
+        setTransactions(prev => prev.filter(t => t.id !== transactionId));
+        setViewingTransactions(prev => prev.filter(t => t.id !== transactionId));
+
+        // 4. (可选) 给一个极其短暂的延迟确保 React 状态更新完毕，然后跳转
+        // 这里的延迟是为了视觉平滑，而不是为了等待请求
+        setTimeout(() => {
+          window.history.back();
+        }, 100);
+
+      } else {
+        // 服务器返回了错误（比如 500 或 403）
+        throw new Error(result.error || '删除失败');
       }
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      // 5. 异常处理：如果不幸失败，不仅不跳转，还要告诉用户
+      console.error('删除请求失败:', error);
+      setIsLoading(false); // 关闭 Loading，让用户留在页面上
+      alert('删除失败：服务器未响应或网络中断，请重试。');
     }
   };
 
-  // 计算器回调
   const handleAmountChange = (newAmount) => {
     setAmount(newAmount);
     setShowCalculator(false);
@@ -82,7 +115,6 @@ const EditTransactionView = ({
 
   return (
     <PageContainer bg="gray">
-      {/* 导航栏 - 删除按钮在右上角 */}
       <TransparentNavBar
         onBack={() => window.history.back()}
         rightButtons={[
@@ -90,19 +122,15 @@ const EditTransactionView = ({
         ]}
       />
 
-      {/* 主内容区 */}
       <div className="pt-20 px-6 max-w-lg mx-auto space-y-6 pb-8">
         
-        {/* 页面标题 */}
         <div className="text-center mb-2">
           <h1 className="text-2xl font-extrabold text-gray-800">编辑消费</h1>
           <p className="text-gray-400 font-medium text-sm mt-1">修改这笔消费记录</p>
         </div>
 
-        {/* 表单卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
           
-          {/* 金额输入 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">金额</label>
             <AmountInput
@@ -111,7 +139,6 @@ const EditTransactionView = ({
             />
           </div>
           
-          {/* 备注输入 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">备注</label>
             <DuoInput
@@ -122,7 +149,6 @@ const EditTransactionView = ({
             />
           </div>
           
-          {/* 日期选择 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">日期</label>
             <input 
@@ -135,18 +161,16 @@ const EditTransactionView = ({
           </div>
         </div>
 
-        {/* 保存按钮 */}
         <DuoButton 
           onClick={handleSubmit}
           disabled={!amount || isLoading}
           fullWidth
           size="lg"
         >
-          {isLoading ? '保存中...' : '保存修改'}
+          保存修改
         </DuoButton>
       </div>
 
-      {/* 计算器弹窗 */}
       {showCalculator && (
         <Calculator
           value={amount}
@@ -157,7 +181,6 @@ const EditTransactionView = ({
         />
       )}
 
-      {/* 删除确认弹窗 */}
       <ConfirmModal 
         isOpen={showDeleteConfirm} 
         title="删除消费记录" 
@@ -168,7 +191,16 @@ const EditTransactionView = ({
         confirmVariant="danger"
       />
       
-      <LoadingOverlay isLoading={isLoading} />
+      {/* 统一的 Loading 遮罩，既用于保存也用于删除 */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-xl">
+            <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-600 font-bold text-sm">{loadingText}</span>
+          </div>
+        </div>
+      )}
+      
     </PageContainer>
   );
 };

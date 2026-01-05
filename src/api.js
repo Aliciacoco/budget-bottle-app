@@ -1030,3 +1030,67 @@ export const getSpecialBudgetItemActualAmount = async (itemId) => {
     return { success: false, error: error.message };
   }
 };
+
+// ===== 【新增】Keepalive 删除函数（夸克浏览器兼容） =====
+// 这些函数使用原生 fetch + keepalive，确保请求在页面关闭后仍能完成
+
+const LEANCLOUD_CONFIG = {
+  serverURL: 'https://ru9hllk7.lc-cn-n1-shared.com',
+  appId: 'ru9hllk7z3E44kqC2n9plsmS-gzGzoHsz',
+  appKey: 'nmVXjDyJqBMGCI9V8KwWXh2V'
+};
+
+const deleteWithKeepAlive = (className, objectId) => {
+  const currentUser = AV.User.current();
+  if (!currentUser) {
+    console.warn('未登录，跳过删除');
+    return;
+  }
+  
+  const headers = {
+    'X-LC-Id': LEANCLOUD_CONFIG.appId,
+    'X-LC-Key': LEANCLOUD_CONFIG.appKey,
+    'X-LC-Session': currentUser.getSessionToken(),
+    'Content-Type': 'application/json'
+  };
+  
+  fetch(`${LEANCLOUD_CONFIG.serverURL}/1.1/classes/${className}/${objectId}`, {
+    method: 'DELETE',
+    keepalive: true,
+    headers
+  }).then(() => {
+    console.log(`✅ ${className} 删除成功`);
+  }).catch(err => {
+    console.warn(`${className} 删除请求:`, err.message);
+  });
+};
+
+// 删除消费记录
+export const deleteTransactionWithKeepAlive = (id) => {
+  deleteWithKeepAlive('Transaction', id);
+};
+
+// 删除心愿
+export const deleteWishWithKeepAlive = (id) => {
+  deleteWithKeepAlive('Wish', id);
+};
+
+// 删除固定支出
+export const deleteFixedExpenseWithKeepAlive = (id) => {
+  deleteWithKeepAlive('FixedExpense', id);
+};
+
+// 删除专项预算
+export const deleteSpecialBudgetWithKeepAlive = (id) => {
+  deleteWithKeepAlive('SpecialBudget', id);
+};
+
+// 删除专项预算明细
+export const deleteSpecialBudgetItemWithKeepAlive = (id) => {
+  deleteWithKeepAlive('SpecialBudgetItem', id);
+};
+
+// 删除专项预算消费记录
+export const deleteSpecialBudgetTransactionWithKeepAlive = (id) => {
+  deleteWithKeepAlive('SpecialBudgetTransaction', id);
+};

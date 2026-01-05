@@ -1,8 +1,8 @@
-// EditSpecialBudgetItemView.jsx - 编辑预算明细（支持消费记录）
-// 新增：在每个明细下记录具体消费流水，实际金额自动汇总
+// EditSpecialBudgetItemView.jsx - 编辑预算明细
+// 修复：夸克浏览器删除问题 - 使用乐观更新
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, ChevronRight } from 'lucide-react';
+import { Trash2, Plus } from 'lucide-react';
 import { 
   createSpecialBudgetItem, 
   updateSpecialBudgetItem, 
@@ -14,7 +14,6 @@ import {
 } from '../api';
 import Calculator from '../components/CalculatorModal';
 
-// 导入设计系统组件
 import { 
   PageContainer,
   TransparentNavBar,
@@ -25,7 +24,6 @@ import {
   LoadingOverlay
 } from '../components/design-system';
 
-// 格式化日期显示
 const formatDisplayDate = (dateStr) => {
   if (!dateStr) return '';
   const date = new Date(dateStr);
@@ -34,7 +32,6 @@ const formatDisplayDate = (dateStr) => {
   return `${month}月${day}日`;
 };
 
-// 获取今天的日期字符串
 const getTodayString = () => {
   const today = new Date();
   const year = today.getFullYear();
@@ -51,31 +48,25 @@ const EditSpecialBudgetItemView = ({
 }) => {
   const isEditing = !!editingItem?.id;
   
-  // 基本信息
   const [name, setName] = useState(editingItem?.name || '');
   const [budgetAmount, setBudgetAmount] = useState(editingItem?.budgetAmount || 0);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
-  // 消费记录
   const [transactions, setTransactions] = useState([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   
-  // 计算器状态
   const [showBudgetCalculator, setShowBudgetCalculator] = useState(false);
   const [showTransactionCalculator, setShowTransactionCalculator] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState(null); // 正在编辑的消费记录
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [transactionNote, setTransactionNote] = useState('');
   
-  // 删除消费记录确认
   const [showDeleteTransactionConfirm, setShowDeleteTransactionConfirm] = useState(false);
   const [deletingTransaction, setDeletingTransaction] = useState(null);
   
-  // 计算实际消费总额
   const actualAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
   const remaining = budgetAmount - actualAmount;
   
-  // 加载消费记录
   const loadTransactions = useCallback(async () => {
     if (!editingItem?.id) return;
     
@@ -92,7 +83,6 @@ const EditSpecialBudgetItemView = ({
     }
   }, [editingItem?.id]);
   
-  // 初始加载
   useEffect(() => {
     if (isEditing) {
       loadTransactions();
@@ -107,7 +97,6 @@ const EditSpecialBudgetItemView = ({
     }
   };
   
-  // 保存明细基本信息
   const handleSave = async () => {
     if (!name.trim()) {
       alert('请输入明细名称');
@@ -118,12 +107,11 @@ const EditSpecialBudgetItemView = ({
     try {
       let result;
       if (isEditing) {
-        // 更新时同步实际金额
         result = await updateSpecialBudgetItem(
           editingItem.id,
           name.trim(),
           budgetAmount || 0,
-          actualAmount // 使用汇总的实际金额
+          actualAmount
         );
       } else {
         result = await createSpecialBudgetItem(
@@ -144,42 +132,41 @@ const EditSpecialBudgetItemView = ({
     }
   };
   
-  // 删除明细
+  // 【核心修复】乐观更新删除明细
   const handleDelete = async () => {
+    if (!editingItem?.id) return;
+    
+    const itemId = editingItem.id;
+    
     setShowDeleteConfirm(false);
-    setIsSaving(true);
+    
+    // 立即返回
+    handleBack();
+    
+    // 后台静默删除
     try {
-      // 先删除所有消费记录
       for (const t of transactions) {
         await deleteSpecialBudgetTransaction(t.id);
       }
-      // 再删除明细
-      const result = await deleteSpecialBudgetItem(editingItem.id);
-      if (result.success) {
-        handleBack();
-      } else {
-        alert('删除失败: ' + result.error);
-      }
-    } finally {
-      setIsSaving(false);
+      await deleteSpecialBudgetItem(itemId);
+      console.log('✅ 明细删除成功');
+    } catch (error) {
+      console.warn('删除请求未完成:', error);
     }
   };
   
-  // 打开添加消费记录
   const openAddTransaction = () => {
     setEditingTransaction(null);
     setTransactionNote('');
     setShowTransactionCalculator(true);
   };
   
-  // 打开编辑消费记录
   const openEditTransaction = (transaction) => {
     setEditingTransaction(transaction);
     setTransactionNote(transaction.description || '');
     setShowTransactionCalculator(true);
   };
   
-  // 保存消费记录
   const handleSaveTransaction = async (amount, note) => {
     if (!amount || amount <= 0) return;
     
@@ -189,7 +176,6 @@ const EditSpecialBudgetItemView = ({
       const today = getTodayString();
       
       if (editingTransaction) {
-        // 更新
         result = await updateSpecialBudgetTransaction(
           editingTransaction.id,
           amount,
@@ -202,7 +188,6 @@ const EditSpecialBudgetItemView = ({
           ));
         }
       } else {
-        // 新增
         result = await createSpecialBudgetTransaction(
           editingItem.id,
           amount,
@@ -218,7 +203,6 @@ const EditSpecialBudgetItemView = ({
         alert('保存失败: ' + result.error);
       }
       
-      // 同步更新明细的实际金额
       const newActual = editingTransaction
         ? transactions.reduce((sum, t) => sum + (t.id === editingTransaction.id ? amount : t.amount), 0)
         : actualAmount + amount;
@@ -237,36 +221,37 @@ const EditSpecialBudgetItemView = ({
     }
   };
   
-  // 删除消费记录
+  // 【核心修复】乐观更新删除消费记录
   const handleDeleteTransaction = async () => {
     if (!deletingTransaction) return;
     
+    const transactionId = deletingTransaction.id;
+    const transactionAmount = deletingTransaction.amount || 0;
+    
     setShowDeleteTransactionConfirm(false);
-    setIsSaving(true);
+    setDeletingTransaction(null);
+    
+    // 1. 立即更新本地状态
+    const newTransactions = transactions.filter(t => t.id !== transactionId);
+    setTransactions(newTransactions);
+    
+    // 2. 后台静默删除
     try {
-      const result = await deleteSpecialBudgetTransaction(deletingTransaction.id);
-      if (result.success) {
-        const newTransactions = transactions.filter(t => t.id !== deletingTransaction.id);
-        setTransactions(newTransactions);
-        
-        // 同步更新明细的实际金额
-        const newActual = newTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-        await updateSpecialBudgetItem(
-          editingItem.id,
-          name.trim(),
-          budgetAmount,
-          newActual
-        );
-      } else {
-        alert('删除失败: ' + result.error);
-      }
-    } finally {
-      setIsSaving(false);
-      setDeletingTransaction(null);
+      await deleteSpecialBudgetTransaction(transactionId);
+      
+      const newActual = newTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+      await updateSpecialBudgetItem(
+        editingItem.id,
+        name.trim(),
+        budgetAmount,
+        newActual
+      );
+      console.log('✅ 消费记录删除成功');
+    } catch (error) {
+      console.warn('删除请求未完成:', error);
     }
   };
   
-  // 预算金额回调
   const handleBudgetAmountChange = (newAmount) => {
     setBudgetAmount(newAmount);
     setShowBudgetCalculator(false);
@@ -274,13 +259,11 @@ const EditSpecialBudgetItemView = ({
   
   return (
     <PageContainer bg="gray">
-      {/* 引入字体 */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
 
-      {/* 导航栏 */}
       <TransparentNavBar
         onBack={handleBack}
         rightButtons={isEditing ? [
@@ -288,10 +271,8 @@ const EditSpecialBudgetItemView = ({
         ] : []}
       />
 
-      {/* 主内容区 */}
       <div className="pt-20 px-6 max-w-lg mx-auto space-y-6 pb-32">
         
-        {/* 页面标题 */}
         <div className="text-center mb-2">
           <h1 className="text-2xl font-extrabold text-gray-800">
             {isEditing ? '编辑明细' : '添加明细'}
@@ -301,10 +282,8 @@ const EditSpecialBudgetItemView = ({
           </p>
         </div>
         
-        {/* 基本信息卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
           
-          {/* 名称输入 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               明细名称
@@ -318,7 +297,6 @@ const EditSpecialBudgetItemView = ({
             />
           </div>
           
-          {/* 预算金额 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               预算金额
@@ -329,7 +307,6 @@ const EditSpecialBudgetItemView = ({
             />
           </div>
           
-          {/* 汇总信息（仅编辑模式显示） */}
           {isEditing && (
             <div 
               className="rounded-2xl p-4"
@@ -359,7 +336,6 @@ const EditSpecialBudgetItemView = ({
           )}
         </div>
         
-        {/* 消费记录卡片（仅编辑模式显示） */}
         {isEditing && (
           <div className="bg-white rounded-3xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -426,7 +402,6 @@ const EditSpecialBudgetItemView = ({
         )}
       </div>
       
-      {/* 底部保存按钮 */}
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
         <div className="max-w-lg mx-auto">
           <DuoButton 
@@ -440,7 +415,6 @@ const EditSpecialBudgetItemView = ({
         </div>
       </div>
       
-      {/* 预算金额计算器 */}
       {showBudgetCalculator && (
         <Calculator
           value={budgetAmount}
@@ -451,7 +425,6 @@ const EditSpecialBudgetItemView = ({
         />
       )}
       
-      {/* 消费记录计算器 */}
       {showTransactionCalculator && (
         <Calculator
           value={editingTransaction?.amount || 0}
@@ -467,7 +440,6 @@ const EditSpecialBudgetItemView = ({
         />
       )}
       
-      {/* 删除明细确认 */}
       <ConfirmModal 
         isOpen={showDeleteConfirm} 
         title="删除明细" 
@@ -478,7 +450,6 @@ const EditSpecialBudgetItemView = ({
         confirmVariant="danger"
       />
       
-      {/* 删除消费记录确认 */}
       <ConfirmModal 
         isOpen={showDeleteTransactionConfirm} 
         title="删除消费记录" 

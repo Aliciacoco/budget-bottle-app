@@ -21,10 +21,6 @@ const ANONYMOUS_ID_KEY = 'budget_bottle_anonymous_id';
 
 // ==================== 匿名用户相关 ====================
 
-/**
- * 生成匿名用户ID
- * 格式: anon_xxxxxxxx (8位随机字符)
- */
 const generateAnonymousId = () => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let id = 'anon_';
@@ -34,10 +30,6 @@ const generateAnonymousId = () => {
   return id;
 };
 
-/**
- * 获取或创建匿名用户ID
- * 每个设备/浏览器有唯一的匿名ID
- */
 export const getOrCreateAnonymousId = () => {
   let anonymousId = localStorage.getItem(ANONYMOUS_ID_KEY);
   
@@ -49,15 +41,12 @@ export const getOrCreateAnonymousId = () => {
   return anonymousId;
 };
 
-/**
- * 创建匿名用户会话
- */
 export const createAnonymousSession = () => {
   const anonymousId = getOrCreateAnonymousId();
   
   const user = {
     username: anonymousId,
-    nickname: '我',
+    nickname: '新朋友',  // 修改：更友好的昵称
     isAnonymous: true,
     loginTime: Date.now()
   };
@@ -69,9 +58,6 @@ export const createAnonymousSession = () => {
 
 // ==================== 正式账号认证 ====================
 
-/**
- * 登录验证（正式账号）
- */
 export const login = (username, password) => {
   const account = TEST_ACCOUNTS.find(
     acc => acc.username === username.toLowerCase().trim()
@@ -97,17 +83,10 @@ export const login = (username, password) => {
   return { success: true, user };
 };
 
-/**
- * 退出登录（回到匿名状态）
- */
 export const logout = () => {
   localStorage.removeItem(AUTH_STORAGE_KEY);
-  // 不删除 ANONYMOUS_ID_KEY，保留匿名身份
 };
 
-/**
- * 获取当前登录用户
- */
 export const getCurrentUser = () => {
   try {
     const stored = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -118,32 +97,20 @@ export const getCurrentUser = () => {
   }
 };
 
-/**
- * 检查是否已有会话（匿名或正式）
- */
 export const hasSession = () => {
   return getCurrentUser() !== null;
 };
 
-/**
- * 检查是否为匿名用户
- */
 export const isAnonymousUser = () => {
   const user = getCurrentUser();
   return user?.isAnonymous === true;
 };
 
-/**
- * 检查是否已登录正式账号
- */
 export const isLoggedIn = () => {
   const user = getCurrentUser();
   return user !== null && user.isAnonymous !== true;
 };
 
-/**
- * 获取当前用户的数据前缀（用于数据隔离）
- */
 export const getUserPrefix = () => {
   const user = getCurrentUser();
   return user ? user.username : getOrCreateAnonymousId();

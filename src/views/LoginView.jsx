@@ -1,13 +1,14 @@
 // LoginView.jsx - 登录页面
-// 支持从匿名状态绑定账号，可返回
+// 支持从匿名状态绑定账号，可返回，密码可见切换
 
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { login } from '../auth';
 
 const LoginView = ({ onLoginSuccess, onBack, isAnonymous }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);  // 新增：密码可见状态
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -47,7 +48,7 @@ const LoginView = ({ onLoginSuccess, onBack, isAnonymous }) => {
         .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
       
-      {/* 返回按钮 - 仅在可返回时显示 */}
+      {/* 返回按钮 */}
       {onBack && (
         <div className="px-6 pt-4">
           <button 
@@ -100,19 +101,34 @@ const LoginView = ({ onLoginSuccess, onBack, isAnonymous }) => {
               />
             </div>
             
-            {/* 密码输入 */}
+            {/* 密码输入 - 新增：显示/隐藏按钮 */}
             <div>
               <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-2 ml-1">
                 密码
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="请输入密码"
-                className="w-full px-4 py-4 bg-gray-50 border-2 border-gray-100 rounded-2xl font-bold text-gray-700 placeholder-gray-300 focus:outline-none focus:bg-white focus:border-cyan-400 transition-all"
-                autoComplete="current-password"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="请输入密码"
+                  className="w-full px-4 py-4 pr-12 bg-gray-50 border-2 border-gray-100 rounded-2xl font-bold text-gray-700 placeholder-gray-300 focus:outline-none focus:bg-white focus:border-cyan-400 transition-all"
+                  autoComplete="current-password"
+                />
+                {/* 显示/隐藏密码按钮 */}
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} strokeWidth={2} />
+                  ) : (
+                    <Eye size={20} strokeWidth={2} />
+                  )}
+                </button>
+              </div>
             </div>
             
             {/* 错误提示 */}

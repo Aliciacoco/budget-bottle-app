@@ -1,7 +1,7 @@
 // BudgetBottleApp.jsx - 主应用文件
-// 功能：周结算动画、夜间效果、核心导航、结算倒计时
+// 修复：1. 彻底移除自动结算 2. 删除消费时同步更新缓存 3. bfcache 兼容
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings, ChevronRight } from 'lucide-react';
 
 // 组件导入
@@ -38,10 +38,7 @@ import {
   getWishes,
   getSpecialBudgets,
   getSpecialBudgetItems,
-  getFixedExpenses,
-  checkWeekSettled,
-  createWishPoolHistory,
-  markWeeklyBudgetSettled
+  getFixedExpenses
 } from './api';
 import { 
   loadFromCache, 
@@ -55,10 +52,6 @@ const colors = {
   primary: '#06B6D4',
   primaryDark: '#0891B2',
 };
-
-// ===== 静默日志（生产环境可关闭） =====
-const DEBUG = false;
-const log = (...args) => DEBUG && console.log(...args);
 
 // ===== 结算倒计时 Hook =====
 const useSettlementCountdown = (weekInfo) => {
@@ -83,7 +76,6 @@ const useSettlementCountdown = (weekInfo) => {
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = totalSeconds % 60;
       
-      // 只在6小时内激活倒计时
       const SIX_HOURS = 6 * 60 * 60;
       const isCountdownActive = totalSeconds <= SIX_HOURS;
       
@@ -109,67 +101,6 @@ const useSettlementCountdown = (weekInfo) => {
     : null;
   
   return { ...timeLeft, formattedTime };
-};
-
-// ===== 自动结算工具函数 =====
-const getPastWeekKeys = (currentWeekInfo, weeksToCheck = 4) => {
-  const pastWeeks = [];
-  let checkDate = new Date(currentWeekInfo.weekStart);
-  
-  for (let i = 0; i < weeksToCheck; i++) {
-    checkDate.setDate(checkDate.getDate() - 7);
-    const pastWeekInfo = getWeekInfo(checkDate);
-    pastWeeks.push(pastWeekInfo);
-  }
-  
-  return pastWeeks;
-};
-
-const autoSettlePastWeeks = async (currentWeekInfo) => {
-  log('🔄 检查过去周结算状态...');
-  
-  const pastWeeks = getPastWeekKeys(currentWeekInfo, 4);
-  let settledCount = 0;
-  let totalSavedAmount = 0;
-  
-  for (const pastWeekInfo of pastWeeks) {
-    try {
-      const settledResult = await checkWeekSettled(pastWeekInfo.weekKey);
-      if (settledResult.success && settledResult.settled) continue;
-      
-      const budgetResult = await getWeeklyBudget(pastWeekInfo.weekKey);
-      if (!budgetResult.success || !budgetResult.data || !budgetResult.data.amount) continue;
-      
-      const transResult = await getTransactions(pastWeekInfo.weekKey);
-      const transactions = transResult.success ? transResult.data : [];
-      const totalSpent = transactions.reduce((sum, t) => sum + t.amount, 0);
-      
-      const budgetAmount = budgetResult.data.amount;
-      const savedAmount = budgetAmount - totalSpent;
-      
-      const historyResult = await createWishPoolHistory(
-        pastWeekInfo.weekKey,
-        budgetAmount,
-        totalSpent,
-        savedAmount,
-        false,
-        '',
-        ''
-      );
-      
-      if (historyResult.success && historyResult.isNew) {
-        await markWeeklyBudgetSettled(pastWeekInfo.weekKey);
-        settledCount++;
-        totalSavedAmount += savedAmount;
-        log(`💰 结算 ${pastWeekInfo.weekKey}: 节省 ¥${savedAmount}`);
-      }
-    } catch (error) {
-      console.error(`结算失败 ${pastWeekInfo.weekKey}:`, error);
-    }
-  }
-  
-  log(`🎉 自动结算完成，本次 ${settledCount} 周，共节省 ¥${totalSavedAmount}`);
-  return { settledCount, totalSavedAmount };
 };
 
 // ===== 主组件 =====
@@ -210,10 +141,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 动画状态 =====
   const [isNight, setIsNight] = useState(isNightTime());
   const [showCelebration, setShowCelebration] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
   
-  // 结算动画状态
-  const [isSettling, setIsSettling] = useState(false);
+  // 结算动画状态（保留用于未来手动结算功能）
   const [settlementPhase, setSettlementPhase] = useState('idle');
   const [drainProgress, setDrainProgress] = useState(0);
   const [poolFillAmount, setPoolFillAmount] = useState(0);
@@ -233,7 +162,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const homeContainerRef = useRef(null);
   const cloudRef = useRef(null);
   const poolRef = useRef(null);
-  const hasAutoSettled = useRef(false);
   
   // ===== 结算倒计时 =====
   const { isCountdownActive, formattedTime } = useSettlementCountdown(weekInfo);
@@ -246,6 +174,22 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const displayRemaining = isInitialLoading ? 0 : remaining;
   const displayPoolAmount = wishPoolAmount === null ? 0 : wishPoolAmount;
   
+  // ===== 更新缓存的工具函数 =====
+  const updateTransactionsCache = useCallback((newTransactions) => {
+    const cached = loadFromCache() || {};
+    saveToCache({ ...cached, transactions: newTransactions });
+  }, []);
+  
+  // ===== 包装 setTransactions，同时更新缓存 =====
+  const updateTransactions = useCallback((updater) => {
+    setTransactions(prev => {
+      const newTransactions = typeof updater === 'function' ? updater(prev) : updater;
+      // 同步更新缓存
+      updateTransactionsCache(newTransactions);
+      return newTransactions;
+    });
+  }, [updateTransactionsCache]);
+  
   // ===== 导航函数 =====
   const navigateTo = (view, params = {}) => {
     setViewParams(params);
@@ -253,7 +197,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     window.history.pushState({ view, params }, '', `#${view}`);
   };
   
-  // ===== 加载次要数据（固定支出、专项预算） =====
+  // ===== 加载次要数据 =====
   const loadSecondaryData = async () => {
     if (isSecondaryLoaded) return;
     
@@ -283,7 +227,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     }
   };
   
-  // ===== 初始化：只加载核心数据 =====
+  // ===== 初始化：只加载数据，不做任何结算 =====
   useEffect(() => {
     const loadCoreData = async () => {
       try {
@@ -302,6 +246,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         if (poolRes.success) setWishPoolAmount(poolRes.data.amount);
         if (wishesRes.success) setWishes(wishesRes.data);
         
+        // 保存到缓存
         saveToCache({
           weeklyBudget: budgetRes.data,
           transactions: transRes.data,
@@ -312,24 +257,12 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         setIsDataReady(true);
         setIsInitialLoading(false);
         
-        // 自动结算并显示动画
-        if (!hasAutoSettled.current) {
-          hasAutoSettled.current = true;
-          const { settledCount, totalSavedAmount } = await autoSettlePastWeeks(weekInfo);
-          
-          if (settledCount > 0) {
-            startSettlementAnimation(totalSavedAmount);
-            const newPoolRes = await getWishPool();
-            if (newPoolRes.success) {
-              setWishPoolAmount(newPoolRes.data.amount);
-            }
-          }
-        }
-        
+        // 延迟加载次要数据
         setTimeout(() => loadSecondaryData(), 500);
         
       } catch (error) {
         console.error('数据加载失败:', error);
+        // 从缓存恢复
         const cached = loadFromCache();
         if (cached) {
           if (cached.weeklyBudget) setWeeklyBudget(cached.weeklyBudget);
@@ -375,12 +308,46 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
   
+  // ===== 【新增】监听 bfcache 恢复（针对夸克/UC等浏览器） =====
+  useEffect(() => {
+    const handlePageShow = (event) => {
+      // persisted 为 true 表示页面是从 bfcache 恢复的
+      if (event.persisted) {
+        console.log('📦 bfcache 恢复，同步缓存数据');
+        const cached = loadFromCache();
+        if (cached) {
+          if (cached.transactions) {
+            setTransactions(cached.transactions);
+            setViewingTransactions(cached.transactions);
+          }
+          if (cached.weeklyBudget) setWeeklyBudget(cached.weeklyBudget);
+          if (cached.wishes) setWishes(cached.wishes);
+          if (cached.wishPoolAmount !== undefined) setWishPoolAmount(cached.wishPoolAmount);
+        }
+      }
+    };
+    
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+  
+  // ===== 【新增】返回首页时同步缓存数据 =====
+  useEffect(() => {
+    if (currentView === 'home') {
+      // 每次返回首页时，从缓存同步数据，确保显示最新状态
+      const cached = loadFromCache();
+      if (cached?.transactions) {
+        setTransactions(cached.transactions);
+        setViewingTransactions(cached.transactions);
+      }
+    }
+  }, [currentView]);
+  
   // ===== 小字切换动画 =====
   useEffect(() => {
     const interval = setInterval(() => {
       setSubtitleOpacity(0);
       setTimeout(() => {
-        // 根据是否有倒计时决定轮播数量
         const count = isCountdownActive ? 3 : 2;
         setSubtitleIndex(prev => (prev + 1) % count);
         setSubtitleOpacity(1);
@@ -419,51 +386,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     };
   }, [isNight]);
   
-  // ===== 首页结算动画 =====
-  const startSettlementAnimation = (savedAmount) => {
-    const isEmpty = savedAmount <= 0;
-    
-    setSettlementData({ saved: savedAmount, isEmpty });
-    setIsSettling(true);
-    setDrainProgress(0);
-    setPoolFillAmount(0);
-    
-    if (isEmpty) {
-      setSettlementPhase('shaking');
-      setTimeout(() => {
-        setSettlementPhase('done');
-        setShowResultModal(true);
-        setIsSettling(false);
-      }, 800);
-    } else {
-      setSettlementPhase('raining');
-      
-      const duration = 3000;
-      const startTime = Date.now();
-      
-      const animate = () => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        
-        setDrainProgress(eased * 100);
-        setPoolFillAmount(Math.round(eased * savedAmount));
-        
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          setSettlementPhase('done');
-          setTimeout(() => {
-            setShowResultModal(true);
-            setIsSettling(false);
-          }, 500);
-        }
-      };
-      
-      requestAnimationFrame(animate);
-    }
-  };
-  
+  // ===== 结算动画函数（保留用于未来手动触发） =====
   const closeSettlementResult = () => {
     setShowResultModal(false);
     setSettlementPhase('idle');
@@ -504,8 +427,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       setShowAddTransactionModal(false);
       setTransactionNote('');
       
-      const cached = loadFromCache() || {};
-      saveToCache({ ...cached, transactions: newTransactions });
+      // 更新缓存
+      updateTransactionsCache(newTransactions);
     } else {
       alert('记录失败: ' + result.error);
     }
@@ -546,7 +469,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   
   // ===== 首页渲染 =====
   const renderHomeView = () => {
-    // 副标题数组 - 倒计时作为第三个轮播项
     const subtitles = isCountdownActive 
       ? [
           `预算 ¥${budgetAmount.toLocaleString()}，已用 ¥${weeklySpent.toLocaleString()}`,
@@ -639,7 +561,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             </div>
           )}
           
-          {/* 设置按钮 */}
           <div className="absolute top-8 right-6 z-20">
             <button 
               onClick={() => navigateTo('budgetSetup')} 
@@ -653,7 +574,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             </button>
           </div>
           
-          {/* 专项预算悬浮图标 */}
           {pinnedBudgets.length > 0 && (
             <DraggableBudgetIcons
               budgets={pinnedBudgets}
@@ -663,10 +583,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             />
           )}
           
-          {/* 主内容区 */}
           <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
-
-            
             <div 
               className="text-center cursor-pointer active:opacity-80" 
               style={{ marginBottom: '50px' }}
@@ -776,7 +693,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             weeklyBudget={weeklyBudget}
             setWeeklyBudget={setWeeklyBudget}
             transactions={transactions}
-            setTransactions={setTransactions}
+            setTransactions={updateTransactions}
             navigateTo={navigateTo}
             isDataReady={isDataReady}
           />
@@ -788,7 +705,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             editingTransaction={viewParams.editingTransaction}
             weekInfo={weekInfo}
             transactions={transactions}
-            setTransactions={setTransactions}
+            setTransactions={updateTransactions}
             viewingTransactions={viewingTransactions}
             setViewingTransactions={setViewingTransactions}
           />
@@ -833,7 +750,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             isDataReady={isDataReady && isSecondaryLoaded}
             currentUser={currentUser}
             onLogout={onLogout}
-            onSwitchAccount={onSwitchAccount}  // 新增这一行
+            onSwitchAccount={onSwitchAccount}
           />
         );
       

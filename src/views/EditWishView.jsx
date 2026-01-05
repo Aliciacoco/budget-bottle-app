@@ -1,5 +1,5 @@
 // EditWishView.jsx - 查看/编辑心愿页面
-// 功能：金额计算器、Mixed Content 修复、心愿实现庆祝动画
+// 修复：夸克浏览器删除问题 - 使用乐观更新
 
 import React, { useState, useRef } from 'react';
 import { Edit2, Trash2, Heart, Undo2, ImagePlus, Palette, X } from 'lucide-react';
@@ -8,10 +8,8 @@ import { createWish, updateWish, deleteWish, getWishes, getWishPool, createWishP
 import { WISH_ICONS, getWishIcon, WISH_ICON_KEYS } from '../constants/wishIcons.jsx';
 import Calculator from '../components/CalculatorModal';
 
-// 导入庆祝动画
 import { CelebrationAnimation } from '../components/animations';
 
-// 导入设计系统组件
 import { 
   PageContainer,
   TransparentNavBar,
@@ -24,7 +22,6 @@ import {
   ContentArea
 } from '../components/design-system';
 
-// ===== 工具函数：确保 URL 使用 HTTPS =====
 const ensureHttps = (url) => {
   if (!url) return url;
   return url.replace(/^http:\/\//i, 'https://');
@@ -43,17 +40,13 @@ const EditWishView = ({
   const [amount, setAmount] = useState(editingWish?.amount || 0);
   const [selectedIcon, setSelectedIcon] = useState(editingWish?.icon || 'ball1');
   
-  // 图片相关状态 - 确保使用 HTTPS
   const [imageMode, setImageMode] = useState(editingWish?.image ? 'image' : 'icon');
   const [imageUrl, setImageUrl] = useState(ensureHttps(editingWish?.image) || '');
   const [imagePreview, setImagePreview] = useState(ensureHttps(editingWish?.image) || '');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
   
-  // 计算器状态
   const [showCalculator, setShowCalculator] = useState(false);
-  
-  // 庆祝动画状态
   const [showCelebration, setShowCelebration] = useState(false);
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -68,13 +61,11 @@ const EditWishView = ({
   const progressPercent = Math.min((wishPoolAmount / wishAmount) * 100, 100);
   const remainingAmount = Math.max(0, wishAmount - wishPoolAmount);
 
-  // --- 计算器回调 ---
   const handleAmountChange = (newAmount) => {
     setAmount(newAmount);
     setShowCalculator(false);
   };
 
-  // --- 图片上传处理 ---
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -120,7 +111,6 @@ const EditWishView = ({
     }
   };
 
-  // --- API 逻辑 ---
   const handleSave = async () => {
     if (!description || !amount) return;
     setIsLoading(true);
@@ -144,15 +134,27 @@ const EditWishView = ({
     } finally { setIsLoading(false); }
   };
 
+  // 【核心修复】乐观更新：先更新UI并跳转，后台静默删除
   const handleDelete = async () => {
-    setShowDeleteConfirm(false); setIsLoading(true);
+    if (!editingWish?.id) return;
+    
+    const wishId = editingWish.id;
+    
+    setShowDeleteConfirm(false);
+    
+    // 1. 立即更新本地状态（乐观更新）
+    setWishes(prev => prev.filter(w => w.id !== wishId));
+    
+    // 2. 立即返回上一页
+    window.history.back();
+    
+    // 3. 后台静默执行删除
     try {
-      const result = await deleteWish(editingWish.id);
-      if (result.success) {
-        setWishes(wishes.filter(w => w.id !== editingWish.id));
-        window.history.back();
-      }
-    } finally { setIsLoading(false); }
+      await deleteWish(wishId);
+      console.log('✅ 心愿删除成功');
+    } catch (error) {
+      console.warn('删除请求未完成，数据将在下次同步时处理:', error);
+    }
   };
 
   const confirmFulfill = async () => {
@@ -170,14 +172,12 @@ const EditWishView = ({
         const wishResult = await getWishes();
         if (wishResult.success) setWishes(wishResult.data);
         
-        // 显示庆祝动画，而不是直接返回
         setIsLoading(false);
         setShowCelebration(true);
       }
     } catch (e) { alert('操作失败'); setIsLoading(false); }
   };
   
-  // 庆祝动画结束后返回
   const handleCelebrationComplete = () => {
     setShowCelebration(false);
     window.history.back();
@@ -350,7 +350,6 @@ const EditWishView = ({
         
         <LoadingOverlay isLoading={isLoading} />
         
-        {/* 庆祝动画 */}
         {showCelebration && (
           <CelebrationAnimation
             wishName={description}
@@ -382,7 +381,6 @@ const EditWishView = ({
         </div>
         
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
-          {/* 名称输入 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">心愿名称</label>
             <DuoInput 
@@ -394,7 +392,6 @@ const EditWishView = ({
             />
           </div>
           
-          {/* 金额输入 - 计算器模式 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">需要多少钱</label>
             <AmountInput
@@ -404,7 +401,6 @@ const EditWishView = ({
           </div>
         </div>
         
-        {/* 图标/图片选择卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between mb-2">
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs ml-1">选择展示方式</label>
@@ -532,7 +528,6 @@ const EditWishView = ({
         </div>
       </ContentArea>
       
-      {/* 计算器弹窗 */}
       {showCalculator && (
         <Calculator
           value={amount}

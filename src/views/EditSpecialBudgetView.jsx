@@ -1,12 +1,11 @@
 // EditSpecialBudgetView.jsx - 新增/编辑独立预算
-// 修复：1. 删除按钮右上角 2. 名称输入支持多行 3. 日期选择器改为两行
+// 修复：夸克浏览器删除问题 - 使用乐观更新
 
 import React, { useState } from 'react';
 import { Check, Trash2 } from 'lucide-react';
 import { FLOATING_ICONS, getFloatingIcon } from '../constants/floatingIcons';
 import { createSpecialBudget, updateSpecialBudget, deleteSpecialBudget } from '../api';
 
-// 导入设计系统组件
 import { 
   PageContainer,
   TransparentNavBar,
@@ -32,11 +31,7 @@ const EditSpecialBudgetView = ({
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
-  // 获取当前选中的图标配置
   const selectedIconConfig = getFloatingIcon(icon);
-  const SelectedIconComponent = selectedIconConfig.icon;
-  
-  // 图标列表
   const iconKeys = Object.keys(FLOATING_ICONS);
   
   const handleBack = () => {
@@ -94,25 +89,31 @@ const EditSpecialBudgetView = ({
     }
   };
   
+  // 【核心修复】乐观更新
   const handleDelete = async () => {
+    if (!editingSpecialBudget?.id) return;
+    
+    const budgetId = editingSpecialBudget.id;
+    
     setShowDeleteConfirm(false);
-    setIsSaving(true);
+    
+    // 1. 立即更新本地状态
+    setSpecialBudgets(prev => prev.filter(b => b.id !== budgetId));
+    
+    // 2. 立即返回
+    handleBack();
+    
+    // 3. 后台静默删除
     try {
-      const result = await deleteSpecialBudget(editingSpecialBudget.id);
-      if (result.success) {
-        setSpecialBudgets(specialBudgets.filter(b => b.id !== editingSpecialBudget.id));
-        handleBack();
-      } else {
-        alert('删除失败: ' + result.error);
-      }
-    } finally {
-      setIsSaving(false);
+      await deleteSpecialBudget(budgetId);
+      console.log('✅ 专项预算删除成功');
+    } catch (error) {
+      console.warn('删除请求未完成:', error);
     }
   };
   
   return (
     <PageContainer bg="gray">
-      {/* 导航栏 - 编辑模式显示删除按钮 */}
       <TransparentNavBar
         onBack={handleBack}
         rightButtons={isEditing ? [
@@ -120,10 +121,8 @@ const EditSpecialBudgetView = ({
         ] : []}
       />
 
-      {/* 主内容区 */}
       <div className="pt-20 px-6 max-w-lg mx-auto space-y-6 pb-8">
         
-        {/* 页面标题 */}
         <div className="text-center mb-2">
           <h1 className="text-2xl font-extrabold text-gray-800">
             {isEditing ? '编辑预算' : '新建预算'}
@@ -133,10 +132,8 @@ const EditSpecialBudgetView = ({
           </p>
         </div>
         
-        {/* 表单卡片 */}
         <div className="bg-white rounded-3xl p-6 shadow-sm space-y-6">
           
-          {/* 名称输入 - 支持多行 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               预算名称
@@ -150,7 +147,6 @@ const EditSpecialBudgetView = ({
             />
           </div>
           
-          {/* 图标选择 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               选择图标
@@ -185,45 +181,35 @@ const EditSpecialBudgetView = ({
             </div>
           </div>
           
-          {/* 日期范围 - 改为两行布局 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               日期范围（可选）
             </label>
             <div className="space-y-3">
-              {/* 开始日期 */}
               <div>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-4 font-bold text-gray-700 text-base focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-                  style={{ 
-                    colorScheme: 'light',
-                    minHeight: '56px'
-                  }}
+                  style={{ colorScheme: 'light', minHeight: '56px' }}
                 />
                 <p className="text-xs text-gray-300 mt-1 ml-1">开始日期</p>
               </div>
               
-              {/* 结束日期 */}
               <div>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   className="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-4 py-4 font-bold text-gray-700 text-base focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-                  style={{ 
-                    colorScheme: 'light',
-                    minHeight: '56px'
-                  }}
+                  style={{ colorScheme: 'light', minHeight: '56px' }}
                 />
                 <p className="text-xs text-gray-300 mt-1 ml-1">结束日期</p>
               </div>
             </div>
           </div>
           
-          {/* 固定到首页 */}
           <div>
             <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
               首页显示
@@ -251,7 +237,6 @@ const EditSpecialBudgetView = ({
           </div>
         </div>
 
-        {/* 保存按钮 */}
         <DuoButton 
           onClick={handleSave}
           disabled={!name.trim() || isSaving}
@@ -262,7 +247,6 @@ const EditSpecialBudgetView = ({
         </DuoButton>
       </div>
       
-      {/* 删除确认弹窗 */}
       <ConfirmModal 
         isOpen={showDeleteConfirm} 
         title="删除预算" 
