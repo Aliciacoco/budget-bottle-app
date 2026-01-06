@@ -1,8 +1,8 @@
 // BudgetBottleApp.jsx - 主应用文件
-// 修复：1. 彻底移除自动结算 2. 删除消费时同步更新缓存 3. bfcache 兼容
+// 修改：删除海底数据格言，添加固定支出列表路由
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Settings, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 // 组件导入
 import BudgetCloud, { CLOUD_COLOR } from './components/BudgetCloud';
@@ -14,8 +14,7 @@ import Calculator from './components/CalculatorModal';
 import { 
   RainEffect,
   SettlementResultModal,
-  CelebrationAnimation,
-  isNightTime 
+  CelebrationAnimation
 } from './components/animations';
 
 // 视图导入
@@ -25,9 +24,13 @@ import EditWishView from './views/EditWishView';
 import EditTransactionView from './views/EditTransactionView';
 import BudgetSetupView from './views/BudgetSetupView';
 import EditFixedExpenseView from './views/EditFixedExpenseView';
+import FixedExpenseListView from './views/FixedExpenseListView';
 import SpecialBudgetDetailView from './views/SpecialBudgetDetailView';
 import EditSpecialBudgetView from './views/EditSpecialBudgetView';
 import EditSpecialBudgetItemView from './views/EditSpecialBudgetItemView';
+import SpecialBudgetTimelineView from './views/SpecialBudgetTimelineView';
+import BrandMenuView from './views/BrandMenuView';
+import SpendingOverviewView from './views/SpendingOverviewView';
 
 // API 和工具函数导入
 import { 
@@ -121,13 +124,14 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const [wishPoolAmount, setWishPoolAmount] = useState(null);
   const [wishes, setWishes] = useState([]);
   
-  // ===== 独立预算（延迟加载） =====
+  // ===== 独立预算 =====
   const [specialBudgets, setSpecialBudgets] = useState([]);
   const [specialBudgetItems, setSpecialBudgetItems] = useState({});
   const [isSecondaryLoaded, setIsSecondaryLoaded] = useState(false);
+  
   const pinnedBudgets = specialBudgets.filter(b => b.pinnedToHome);
   
-  // ===== 月预算和固定支出（延迟加载） =====
+  // ===== 月预算和固定支出 =====
   const [monthlyBudget, setMonthlyBudget] = useState(() => {
     const saved = localStorage.getItem('monthly_budget');
     return saved ? parseFloat(saved) : 3000;
@@ -139,10 +143,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const [subtitleOpacity, setSubtitleOpacity] = useState(1);
   
   // ===== 动画状态 =====
-  const [isNight, setIsNight] = useState(isNightTime());
   const [showCelebration, setShowCelebration] = useState(false);
-  
-  // 结算动画状态（保留用于未来手动结算功能）
   const [settlementPhase, setSettlementPhase] = useState('idle');
   const [drainProgress, setDrainProgress] = useState(0);
   const [poolFillAmount, setPoolFillAmount] = useState(0);
@@ -174,17 +175,19 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const displayRemaining = isInitialLoading ? 0 : remaining;
   const displayPoolAmount = wishPoolAmount === null ? 0 : wishPoolAmount;
   
+  // 固定支出计算
+  const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
+  const fixedExpensesTotal = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
+  
   // ===== 更新缓存的工具函数 =====
   const updateTransactionsCache = useCallback((newTransactions) => {
     const cached = loadFromCache() || {};
     saveToCache({ ...cached, transactions: newTransactions });
   }, []);
   
-  // ===== 包装 setTransactions，同时更新缓存 =====
   const updateTransactions = useCallback((updater) => {
     setTransactions(prev => {
       const newTransactions = typeof updater === 'function' ? updater(prev) : updater;
-      // 同步更新缓存
       updateTransactionsCache(newTransactions);
       return newTransactions;
     });
@@ -227,7 +230,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     }
   };
   
-  // ===== 初始化：只加载数据，不做任何结算 =====
+  // ===== 初始化 =====
   useEffect(() => {
     const loadCoreData = async () => {
       try {
@@ -246,7 +249,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         if (poolRes.success) setWishPoolAmount(poolRes.data.amount);
         if (wishesRes.success) setWishes(wishesRes.data);
         
-        // 保存到缓存
         saveToCache({
           weeklyBudget: budgetRes.data,
           transactions: transRes.data,
@@ -257,12 +259,10 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         setIsDataReady(true);
         setIsInitialLoading(false);
         
-        // 延迟加载次要数据
         setTimeout(() => loadSecondaryData(), 500);
         
       } catch (error) {
         console.error('数据加载失败:', error);
-        // 从缓存恢复
         const cached = loadFromCache();
         if (cached) {
           if (cached.weeklyBudget) setWeeklyBudget(cached.weeklyBudget);
@@ -281,9 +281,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     loadCoreData();
   }, [weekInfo.weekKey]);
   
-  // ===== 进入设置页面时确保次要数据已加载 =====
   useEffect(() => {
-    if (currentView === 'budgetSetup' && !isSecondaryLoaded) {
+    if ((currentView === 'budgetSetup' || currentView === 'specialBudgetTimeline' || currentView === 'spendingOverview' || currentView === 'fixedExpenseList') && !isSecondaryLoaded) {
       loadSecondaryData();
     }
   }, [currentView, isSecondaryLoaded]);
@@ -308,12 +307,10 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
   
-  // ===== 【新增】监听 bfcache 恢复（针对夸克/UC等浏览器） =====
+  // ===== bfcache 恢复 =====
   useEffect(() => {
     const handlePageShow = (event) => {
-      // persisted 为 true 表示页面是从 bfcache 恢复的
       if (event.persisted) {
-        console.log('📦 bfcache 恢复，同步缓存数据');
         const cached = loadFromCache();
         if (cached) {
           if (cached.transactions) {
@@ -331,10 +328,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     return () => window.removeEventListener('pageshow', handlePageShow);
   }, []);
   
-  // ===== 【新增】返回首页时同步缓存数据 =====
   useEffect(() => {
     if (currentView === 'home') {
-      // 每次返回首页时，从缓存同步数据，确保显示最新状态
       const cached = loadFromCache();
       if (cached?.transactions) {
         setTransactions(cached.transactions);
@@ -357,36 +352,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     return () => clearInterval(interval);
   }, [isCountdownActive]);
   
-  // ===== 夜间模式检测 =====
-  useEffect(() => {
-    const checkNightMode = () => {
-      setIsNight(isNightTime());
-    };
-    const interval = setInterval(checkNightMode, 60000);
-    return () => clearInterval(interval);
-  }, []);
-  
-  // ===== 夜间模式全局样式 =====
-  useEffect(() => {
-    const nightBgColor = '#000437';
-    const dayBgColor = '#F9FAFB';
-    
-    document.body.style.backgroundColor = isNight ? nightBgColor : dayBgColor;
-    
-    let themeColorMeta = document.querySelector('meta[name="theme-color"]');
-    if (!themeColorMeta) {
-      themeColorMeta = document.createElement('meta');
-      themeColorMeta.name = 'theme-color';
-      document.head.appendChild(themeColorMeta);
-    }
-    themeColorMeta.content = isNight ? nightBgColor : dayBgColor;
-    
-    return () => {
-      document.body.style.backgroundColor = '';
-    };
-  }, [isNight]);
-  
-  // ===== 结算动画函数（保留用于未来手动触发） =====
+  // ===== 其他处理函数 =====
   const closeSettlementResult = () => {
     setShowResultModal(false);
     setSettlementPhase('idle');
@@ -426,8 +392,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       setViewingTransactions(newTransactions);
       setShowAddTransactionModal(false);
       setTransactionNote('');
-      
-      // 更新缓存
       updateTransactionsCache(newTransactions);
     } else {
       alert('记录失败: ' + result.error);
@@ -488,9 +452,11 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
             .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
-            .home-container { min-height: 100vh; min-height: 100dvh; }
           `}</style>
-          <div className="home-container flex flex-col relative bg-gray-50">
+          <div className="min-h-screen flex flex-col relative bg-gray-50">
+            <div className="absolute top-8 left-6 z-20">
+              <div className="h-8 w-24 bg-gray-200 rounded-lg skeleton-pulse" />
+            </div>
             <div className="absolute top-8 right-6 z-20">
               <div className="w-10 h-10 bg-gray-200 rounded-2xl skeleton-pulse" />
             </div>
@@ -517,120 +483,98 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
           .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
-          .home-container { 
-            min-height: 100vh; 
-            min-height: 100dvh; 
-            overflow: hidden;
-          }
-          @keyframes twinkle {
-            0%, 100% { opacity: 0.3; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.2); }
-          }
-          .star {
-            position: absolute;
-            background: white;
-            border-radius: 50%;
-            animation: twinkle 2s ease-in-out infinite;
-          }
         `}</style>
 
         <div 
           ref={homeContainerRef} 
-          className={`home-container flex flex-col relative transition-colors duration-1000 ${isNight ? '' : 'bg-gray-50'}`}
-          style={{ 
-            transform: 'translateZ(0)',
-            background: isNight ? '#000437' : undefined
-          }}
+          className="min-h-screen bg-gray-50"
         >
-          {isNight && (
-            <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-              {[...Array(40)].map((_, i) => (
-                <div
-                  key={i}
-                  className="star"
-                  style={{
-                    left: `${(i * 17 + 7) % 100}%`,
-                    top: `${(i * 13 + 3) % 60}%`,
-                    width: `${1 + (i % 3)}px`,
-                    height: `${1 + (i % 3)}px`,
-                    animationDelay: `${(i * 0.1) % 3}s`,
-                    boxShadow: `0 0 ${2 + (i % 4)}px rgba(255,255,255,0.4)`
-                  }}
-                />
-              ))}
+          {/* 主内容区域 */}
+          <div className="min-h-screen flex flex-col relative">
+            {/* 左上角：CloudPool Logo */}
+            <div className="absolute top-8 left-6 z-20">
+              <button 
+                onClick={() => navigateTo('brandMenu')} 
+                className="text-cyan-500 font-extrabold text-xl font-rounded hover:text-cyan-600 active:scale-95 transition-all"
+              >
+                CloudPool
+              </button>
             </div>
-          )}
-          
-          <div className="absolute top-8 right-6 z-20">
-            <button 
-              onClick={() => navigateTo('budgetSetup')} 
-              className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-all active:scale-95 ${
-                isNight 
-                  ? 'bg-white/10 text-white/70 hover:text-white' 
-                  : 'bg-white text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              <Settings size={20} strokeWidth={2.5} />
-            </button>
-          </div>
-          
-          {pinnedBudgets.length > 0 && (
-            <DraggableBudgetIcons
-              budgets={pinnedBudgets}
-              onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
-              cloudRef={cloudRef}
-              setSpecialBudgets={setSpecialBudgets}
-            />
-          )}
-          
-          <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
-            <div 
-              className="text-center cursor-pointer active:opacity-80" 
-              style={{ marginBottom: '50px' }}
-              onClick={() => navigateTo('transactionList')}
-            >
-              <h1 
-                className="font-extrabold leading-none font-rounded"
-                style={{ fontSize: '36px', color: isNight ? '#67E8F9' : colors.primary }}
+            
+            {/* 右上角：消费全景入口 */}
+            <div className="absolute top-8 right-6 z-20">
+              <button 
+                onClick={() => navigateTo('spendingOverview')} 
+                className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-all active:scale-95 bg-white"
               >
-                <span className={`text-2xl mr-1 ${isNight ? 'text-white/30' : 'text-gray-300'}`}>¥</span>
-                {displayRemaining.toLocaleString()}
-              </h1>
+                {/* 四宫格图标 */}
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <rect x="2" y="2" width="7" height="7" rx="2" fill="#06B6D4"/>
+                  <rect x="11" y="2" width="7" height="7" rx="2" fill="#F59E0B"/>
+                  <rect x="2" y="11" width="7" height="7" rx="2" fill="#10B981"/>
+                  <rect x="11" y="11" width="7" height="7" rx="2" fill="#8B5CF6"/>
+                </svg>
+              </button>
+            </div>
+            
+            {pinnedBudgets.length > 0 && (
+              <DraggableBudgetIcons
+                budgets={pinnedBudgets}
+                onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+                cloudRef={cloudRef}
+                setSpecialBudgets={setSpecialBudgets}
+              />
+            )}
+            
+            <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
               <div 
-                className={`flex items-center gap-1 mt-3 font-bold mx-auto justify-center ${isNight ? 'text-white/50' : 'text-gray-400'}`}
-                style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
+                className="text-center cursor-pointer active:opacity-80" 
+                style={{ marginBottom: '50px' }}
+                onClick={() => navigateTo('transactionList')}
               >
-                <span className="text-sm">{subtitles[subtitleIndex]}</span>
-                <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
+                <h1 
+                  className="font-extrabold leading-none font-rounded"
+                  style={{ fontSize: '36px', color: colors.primary }}
+                >
+                  <span className="text-2xl mr-1 text-gray-300">¥</span>
+                  {displayRemaining.toLocaleString()}
+                </h1>
+                <div 
+                  className="flex items-center gap-1 mt-3 font-bold mx-auto justify-center text-gray-400"
+                  style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
+                >
+                  <span className="text-sm">{subtitles[subtitleIndex]}</span>
+                  <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
+                </div>
+              </div>
+              
+              <div 
+                ref={cloudRef}
+                className="w-full flex justify-center" 
+                style={{ maxWidth: '280px' }}
+              >
+                <BudgetCloud 
+                  remaining={displayRemaining} 
+                  total={budgetAmount} 
+                  spent={weeklySpent} 
+                  onClick={openAddTransactionModal}
+                  drainProgress={drainProgress}
+                  isShaking={settlementPhase === 'shaking'}
+                />
               </div>
             </div>
             
-            <div 
-              ref={cloudRef}
-              className="w-full flex justify-center" 
-              style={{ maxWidth: '280px' }}
-            >
-              <BudgetCloud 
-                remaining={displayRemaining} 
-                total={budgetAmount} 
-                spent={weeklySpent} 
-                onClick={openAddTransactionModal}
-                drainProgress={drainProgress}
-                isShaking={settlementPhase === 'shaking'}
+            <div ref={poolRef}>
+              <WishPoolBar 
+                poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 
+                animatingAmount={poolFillAmount}
+                wishes={wishes} 
+                onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
+                onPoolClick={() => navigateTo('wishPoolDetail')} 
+                debugMode={isDebugMode} 
+                onDebugChange={handleDebugChange}
               />
             </div>
-          </div>
-          
-          <div ref={poolRef}>
-            <WishPoolBar 
-              poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 
-              animatingAmount={poolFillAmount}
-              wishes={wishes} 
-              onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
-              onPoolClick={() => navigateTo('wishPoolDetail')} 
-              debugMode={isDebugMode} 
-              onDebugChange={handleDebugChange}
-            />
           </div>
         </div>
         
@@ -685,6 +629,37 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     switch (currentView) {
       case 'home':
         return renderHomeView();
+      
+      case 'brandMenu':
+        return (
+          <BrandMenuView
+            onBack={() => window.history.back()}
+            onLogout={onLogout}
+            onSwitchToLogin={onSwitchAccount}
+            currentUser={currentUser}
+          />
+        );
+      
+      case 'spendingOverview':
+        return (
+          <SpendingOverviewView
+            onBack={() => window.history.back()}
+            navigateTo={navigateTo}
+            weeklyRemaining={displayRemaining}
+            fixedExpensesTotal={fixedExpensesTotal}
+            fixedExpensesCount={enabledExpenses.length}
+            specialBudgetsCount={specialBudgets.length}
+          />
+        );
+      
+      case 'fixedExpenseList':
+        return (
+          <FixedExpenseListView
+            fixedExpenses={fixedExpenses}
+            onBack={() => window.history.back()}
+            navigateTo={navigateTo}
+          />
+        );
         
       case 'transactionList':
         return (
@@ -740,8 +715,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             setMonthlyBudget={setMonthlyBudget}
             fixedExpenses={fixedExpenses || []}
             setFixedExpenses={setFixedExpenses}
-            specialBudgets={specialBudgets || []}
-            specialBudgetItems={specialBudgetItems || {}}
             weekInfo={weekInfo}
             weeklyBudget={weeklyBudget}
             setWeeklyBudget={setWeeklyBudget}
@@ -750,7 +723,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             isDataReady={isDataReady && isSecondaryLoaded}
             currentUser={currentUser}
             onLogout={onLogout}
-            onSwitchAccount={onSwitchAccount}
+            onSwitchToLogin={onSwitchAccount}
           />
         );
       
@@ -761,6 +734,18 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             fixedExpenses={fixedExpenses}
             setFixedExpenses={setFixedExpenses}
             onBack={() => window.history.back()}
+          />
+        );
+      
+      case 'specialBudgetTimeline':
+        return (
+          <SpecialBudgetTimelineView
+            specialBudgets={specialBudgets}
+            setSpecialBudgets={setSpecialBudgets}
+            specialBudgetItems={specialBudgetItems}
+            navigateTo={navigateTo}
+            onBack={() => window.history.back()}
+            isDataReady={isSecondaryLoaded}
           />
         );
         
@@ -800,10 +785,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   };
   
   return (
-    <div 
-      className="min-h-screen transition-colors duration-500"
-      style={{ backgroundColor: isNight ? '#000437' : '#F9FAFB' }}
-    >
+    <div className="min-h-screen bg-gray-50">
       {renderCurrentView()}
     </div>
   );
