@@ -1,33 +1,62 @@
 // BudgetCloud.jsx - 云朵组件
-// 功能：水位显示、波浪动画、结算排水动画、空云抖动
+// 功能：水位显示、波浪动画、底部阴影、动态嘴巴
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // 设计系统颜色
-export const CLOUD_COLOR = '#00BFDC';  // cyan-500
+export const CLOUD_COLOR = '#00C3E0';
 
 const BudgetCloud = ({ 
   remaining, 
   total, 
   spent, 
   onClick,
-  drainProgress = 0,  // 0-100 排水进度（结算动画用）
-  isShaking = false   // 是否抖动（空云动画用）
+  drainProgress = 0,
+  isShaking = false
 }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const currentHRef = useRef(null);
+  const [isPressed, setIsPressed] = useState(false);
+  const [mouthOffset, setMouthOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
   
-  const originalW = 308;
-  const originalH = 224;
-  const logicalW = 280;
-  const logicalH = Math.round(logicalW * (originalH / originalW));
+  // SVG原始尺寸
+  const svgW = 300;
+  const svgH = 260;
+  // 显示尺寸
+  const displayW = 320;
+  const displayH = Math.round(displayW * svgH / svgW);
 
-  // 计算实际水位（考虑排水进度）
+  // 计算实际水位
   const basePercentage = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
   const percentage = Math.max(0, basePercentage - drainProgress);
 
   const liquidColor = CLOUD_COLOR;
 
+  // 计算缩放比例
+  useEffect(() => {
+    setScale(displayW / svgW);
+  }, []);
+
+  // 嘴巴漂浮动画
+  useEffect(() => {
+    let animationId;
+    let startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const x = Math.sin(elapsed * 0.002) * 3 + Math.sin(elapsed * 0.0015) * 2;
+      const y = Math.sin(elapsed * 0.0025) * 2 + Math.cos(elapsed * 0.002) * 1.5;
+      setMouthOffset({ x, y });
+      animationId = requestAnimationFrame(animate);
+    };
+    
+    animate();
+    return () => cancelAnimationFrame(animationId);
+  }, []);
+
+  // 水波动画
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -35,31 +64,32 @@ const BudgetCloud = ({
     let animationFrameId;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = logicalW * dpr;
-    canvas.height = logicalH * dpr;
+    canvas.width = displayW * dpr;
+    canvas.height = displayH * dpr;
     ctx.scale(dpr, dpr);
 
     const speed = 0.04;
     const wavelength = 0.025;
-    const amplitude = 4;
+    const amplitude = 4 * scale;
     
     if (currentHRef.current === null) {
       currentHRef.current = percentage;
     }
 
-    const C_TOP = 0.03;
-    const C_BOT = 0.95;
+    // 云朵内部的水位范围（缩放后）
+    const C_TOP = 80 * scale;
+    const C_BOT = 220 * scale;
 
     const B_SETTINGS = [
-      { x: 45,  y: logicalH * 0.80, maxR: 5, delay: 80 },
-      { x: 110, y: logicalH * 0.99, maxR: 8, delay: 0 },
-      { x: 175, y: logicalH * 0.90, maxR: 6, delay: 320 },
-      { x: 240, y: logicalH * 0.88, maxR: 4, delay: 180 }
+      { x: 60 * scale,  y: 200 * scale, maxR: 5 * scale, delay: 80 },
+      { x: 120 * scale, y: 210 * scale, maxR: 8 * scale, delay: 0 },
+      { x: 180 * scale, y: 205 * scale, maxR: 6 * scale, delay: 320 },
+      { x: 240 * scale, y: 200 * scale, maxR: 4 * scale, delay: 180 }
     ];
 
     const bubbles = B_SETTINGS.map(set => ({
       ...set, r: 0.1, status: 'waiting', waitCounter: 0, f: 0,
-      maxTravel: logicalH * 0.3, configY: set.y, dyingRStart: 0
+      maxTravel: 60 * scale, configY: set.y, dyingRStart: 0
     }));
 
     const bubbleSVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
@@ -75,31 +105,29 @@ const BudgetCloud = ({
     bubbleImg.src = bubbleSVG;
 
     const render = () => {
-      ctx.clearRect(0, 0, logicalW, logicalH);
+      ctx.clearRect(0, 0, displayW, displayH);
       
       currentHRef.current += (percentage - currentHRef.current) * 0.08;
 
       const phase = (performance.now() * speed * 0.001) * 25;
 
-      const tY = logicalH * C_TOP;
-      const bY = logicalH * C_BOT;
-      const fillRange = bY - tY - amplitude * 2;
-      const waterLevel = bY - amplitude - (fillRange * (currentHRef.current / 100));
+      const fillRange = C_BOT - C_TOP - amplitude * 2;
+      const waterLevel = C_BOT - amplitude - (fillRange * (currentHRef.current / 100));
 
       ctx.beginPath();
       ctx.fillStyle = liquidColor;
-      ctx.moveTo(0, logicalH);
+      ctx.moveTo(0, displayH);
       
-      for (let x = 0; x <= logicalW; x++) {
-        const waveY = waterLevel + Math.sin(x * wavelength + phase) * amplitude;
+      for (let x = 0; x <= displayW; x++) {
+        const waveY = waterLevel + Math.sin(x * wavelength / scale + phase) * amplitude;
         ctx.lineTo(x, waveY);
       }
       
-      ctx.lineTo(logicalW, logicalH);
+      ctx.lineTo(displayW, displayH);
       ctx.closePath();
       ctx.fill();
 
-      // 只在有水时显示气泡
+      // 气泡
       if (currentHRef.current > 5) {
         bubbles.forEach(b => {
           if (b.status === 'waiting') {
@@ -111,7 +139,7 @@ const BudgetCloud = ({
               b.y = b.configY;
             }
           } else {
-            b.y -= 0.2;
+            b.y -= 0.3 * scale;
             
             if (b.status === 'birthing') {
               b.f++; 
@@ -154,21 +182,35 @@ const BudgetCloud = ({
     if (bubbleImg.complete) render();
     
     return () => cancelAnimationFrame(animationFrameId);
-  }, [percentage, logicalH, liquidColor]);
+  }, [percentage, liquidColor, scale, displayW, displayH]);
 
-  const cloudPath = "M170.621 38C201.558 38 228.755 53.2859 244.555 76.4834L245.299 77.5938L245.306 77.6035C247.53 81.0058 251.079 83.3252 255.11 84.0352L255.502 84.0986L255.511 84.0996C299.858 90.8163 334 127.546 334 172.283C334 221.589 294.443 261.625 245.621 261.625H104.896L104.79 261.619C61.1843 259.33 26 226.502 26 185.76C26 154.771 46.4474 128.375 75.3525 116.578L75.3594 116.575C79.8465 114.754 83.1194 110.742 84.1465 105.889C92.3483 67.057 128.005 38.0001 170.621 38Z";
+  // 云朵路径（缩放后用于CSS clip-path）
+  const scaledCloudPath = `path('M${141.872 * scale} ${33 * scale}C${167.933 * scale} ${33.0001 * scale} ${190.742 * scale} ${46.6446 * scale} ${203.696 * scale} ${67.1777 * scale}C${206.236 * scale} ${71.2314 * scale} ${210.326 * scale} ${73.9341 * scale} ${214.924 * scale} ${74.6494 * scale}C${251.805 * scale} ${80.4783 * scale} ${280 * scale} ${112.298 * scale} ${280 * scale} ${150.821 * scale}C${280 * scale} ${193.451 * scale} ${247.233 * scale} ${228.001 * scale} ${206.872 * scale} ${228.001 * scale}H${85 * scale}C${48.728 * scale} ${226.014 * scale} ${20 * scale} ${197.611 * scale} ${20 * scale} ${163.009 * scale}C${20.0001 * scale} ${136.673 * scale} ${36.6628 * scale} ${113.994 * scale} ${60.6152 * scale} ${103.794 * scale}C${65.6191 * scale} ${101.674 * scale} ${69.2007 * scale} ${97.0373 * scale} ${70.3184 * scale} ${91.5264 * scale}C${77.0749 * scale} ${58.1431 * scale} ${106.515 * scale} ${33 * scale} ${141.872 * scale} ${33 * scale}Z')`;
+
+  const cloudPath = "M141.872 33C167.933 33.0001 190.742 46.6446 203.696 67.1777C206.236 71.2314 210.326 73.9341 214.924 74.6494C251.805 80.4783 280 112.298 280 150.821C280 193.451 247.233 228.001 206.872 228.001H85C48.728 226.014 20 197.611 20 163.009C20.0001 136.673 36.6628 113.994 60.6152 103.794C65.6191 101.674 69.2007 97.0373 70.3184 91.5264C77.0749 58.1431 106.515 33 141.872 33Z";
+
+  const handleClick = (e) => {
+    setIsPressed(true);
+    setTimeout(() => setIsPressed(false), 200);
+    if (onClick) onClick(e);
+  };
+
+  // 嘴巴尺寸和位置
+  const mouthWidth = isPressed ? 52 : 40;
+  const mouthHeight = 14;
+  const mouthX = 150 - mouthWidth / 2 + mouthOffset.x;
+  const mouthY = 177 + mouthOffset.y;
 
   return (
     <div 
-      className={`relative cursor-pointer active:scale-95 transition-transform duration-300 flex items-center justify-center ${isShaking ? 'animate-shake' : ''}`}
-      onClick={onClick}
+      ref={containerRef}
+      className={`relative cursor-pointer active:scale-95 transition-transform duration-300 ${isShaking ? 'animate-shake' : ''}`}
+      onClick={handleClick}
       style={{ 
-        width: '100%',
-        maxWidth: `${logicalW}px`, 
-        aspectRatio: `${logicalW} / ${logicalH}`
+        width: `${displayW}px`,
+        height: `${displayH}px`
       }}
     >
-      {/* 抖动动画样式 */}
       <style>{`
         @keyframes shake {
           0%, 100% { transform: translateX(0); }
@@ -180,42 +222,69 @@ const BudgetCloud = ({
         }
       `}</style>
       
-      <svg width="0" height="0" style={{ position: 'absolute' }}>
-        <defs>
-          <clipPath id="cloudClipPath" clipPathUnits="userSpaceOnUse" transform={`scale(${logicalW / originalW})`}>
-            <path d={cloudPath} transform="translate(-26, -38)" />
-          </clipPath>
-        </defs>
-      </svg>
-
+      {/* 云朵背景SVG（带阴影） */}
       <svg 
-        className="absolute inset-0" 
-        width="100%"
-        height="100%"
-        viewBox="26 38 308 224"
+        className="absolute inset-0"
+        width={displayW}
+        height={displayH}
+        viewBox="0 0 300 260"
         preserveAspectRatio="xMidYMid meet"
       >
+        <defs>
+          <filter id="cloudShadow" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="0" dy="7" stdDeviation="0" floodColor="#0EABC3" floodOpacity="1" />
+          </filter>
+        </defs>
         <path 
           d={cloudPath} 
           fill="#F3F4F6"
+          filter="url(#cloudShadow)"
         />
       </svg>
-
+      
+      {/* 水波Canvas层（裁剪到云朵形状） */}
       <div 
-        className="absolute inset-0 overflow-hidden"
+        className="absolute inset-0"
         style={{
-          clipPath: "url(#cloudClipPath)",
-          WebkitClipPath: "url(#cloudClipPath)"
+          clipPath: scaledCloudPath,
+          WebkitClipPath: scaledCloudPath
         }}
       >
         <canvas 
-          ref={canvasRef} 
+          ref={canvasRef}
           style={{ 
-            width: '100%', 
-            height: '100%'
+            width: `${displayW}px`, 
+            height: `${displayH}px`
           }} 
         />
       </div>
+      
+      {/* 嘴巴层 */}
+      <svg 
+        className="absolute inset-0 pointer-events-none"
+        width={displayW}
+        height={displayH}
+        viewBox="0 0 300 260"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <defs>
+          <filter id="mouthShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="1" floodColor="#0EABC3" floodOpacity="0.6" />
+          </filter>
+        </defs>
+        <rect 
+          x={mouthX}
+          y={mouthY}
+          width={mouthWidth}
+          height={mouthHeight}
+          rx="7"
+          fill="white"
+          filter="url(#mouthShadow)"
+          style={{
+            transition: 'width 0.15s ease-out, x 0.15s ease-out'
+          }}
+        />
+      </svg>
     </div>
   );
 };

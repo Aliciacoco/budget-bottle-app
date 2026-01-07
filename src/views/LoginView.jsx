@@ -1,5 +1,5 @@
 // LoginView.jsx - 登录页面
-// 修改：添加游客模式、获取内测账号弹窗
+// 极简设计系统风格
 
 import React, { useState } from 'react';
 import { ArrowLeft, Eye, EyeOff, X, Mail, MessageCircle } from 'lucide-react';
@@ -29,77 +29,71 @@ const GetAccountModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl p-6 w-full max-w-lg shadow-xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-800">获取内测账号</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      
+      <div className="relative bg-white rounded-3xl p-6 w-full max-w-sm">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-extrabold text-gray-800">获取内测账号</h3>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400"
+            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 active:scale-95"
           >
             <X size={18} />
           </button>
         </div>
         
-        <p className="text-gray-500 text-sm mb-6 leading-relaxed">
-          CloudPool 目前处于内测阶段，如需获取内测账号，请通过以下方式联系我们：
-        </p>
-        
         {/* 邮箱 */}
         <div className="bg-gray-50 rounded-2xl p-4 mb-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center">
-              <Mail size={20} className="text-cyan-500" />
+              <Mail size={20} className="text-cyan-600" />
             </div>
-            <div className="flex-1">
-              <p className="text-gray-400 text-xs mb-0.5">邮箱</p>
-              <p className="text-gray-700 font-medium">beta@cloudpool.app</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-gray-400 text-xs font-bold">邮箱</p>
+              <p className="text-gray-700 font-bold truncate">beta@cloudpool.app</p>
             </div>
             <button
               onClick={() => handleCopy('beta@cloudpool.app', 'email')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
                 copied === 'email'
                   ? 'bg-green-500 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 active:scale-95'
+                  : 'bg-white text-gray-600 border-2 border-gray-200 active:scale-95'
               }`}
             >
-              {copied === 'email' ? '已复制' : '复制'}
+              {copied === 'email' ? '✓' : '复制'}
             </button>
           </div>
         </div>
         
         {/* 微信 */}
-        <div className="bg-gray-50 rounded-2xl p-4 mb-6">
+        <div className="bg-gray-50 rounded-2xl p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-              <MessageCircle size={20} className="text-green-500" />
+              <MessageCircle size={20} className="text-green-600" />
             </div>
-            <div className="flex-1">
-              <p className="text-gray-400 text-xs mb-0.5">微信</p>
-              <p className="text-gray-700 font-medium">CloudPool_Beta</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-gray-400 text-xs font-bold">微信</p>
+              <p className="text-gray-700 font-bold truncate">CloudPool_Beta</p>
             </div>
             <button
               onClick={() => handleCopy('CloudPool_Beta', 'wechat')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
                 copied === 'wechat'
                   ? 'bg-green-500 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 active:scale-95'
+                  : 'bg-white text-gray-600 border-2 border-gray-200 active:scale-95'
               }`}
             >
-              {copied === 'wechat' ? '已复制' : '复制'}
+              {copied === 'wechat' ? '✓' : '复制'}
             </button>
           </div>
         </div>
-        
-        <p className="text-gray-300 text-xs text-center">
-          发送邮件时请注明「CloudPool 内测申请」
-        </p>
       </div>
     </div>
   );
 };
 
+// 主登录页面
 const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -123,23 +117,14 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
     }
     
     setIsLoading(true);
-    
     await new Promise(resolve => setTimeout(resolve, 500));
-    
     const result = login(username, password);
-    
     setIsLoading(false);
     
     if (result.success) {
       onLoginSuccess(result.user);
     } else {
       setError(result.error);
-    }
-  };
-  
-  const handleGuestMode = () => {
-    if (onGuestMode) {
-      onGuestMode();
     }
   };
   
@@ -150,145 +135,115 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
         .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
       
-      {/* 返回按钮 */}
-      {onBack && (
-        <div className="px-6 pt-4">
+      {/* 顶部 */}
+      <div className="px-6 pt-6 flex items-center justify-between">
+        {onBack ? (
           <button 
             onClick={onBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
+            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 active:scale-95"
           >
             <ArrowLeft size={24} strokeWidth={2.5} />
           </button>
-        </div>
-      )}
-      
-      {/* 标题区域 */}
-      <div className="flex flex-col items-center justify-center px-6 pt-12 pb-8">
-        {/* 云朵图标 */}
-        <div className="mb-4">
-          <svg width="80" height="60" viewBox="0 0 80 60" fill="none">
-            <ellipse cx="50" cy="35" rx="28" ry="22" fill="#06B6D4" opacity="0.9"/>
-            <ellipse cx="30" cy="40" rx="22" ry="18" fill="#22D3EE" opacity="0.8"/>
-            <ellipse cx="55" cy="42" rx="18" ry="14" fill="#67E8F9" opacity="0.7"/>
-          </svg>
-        </div>
-        <h1 className="text-4xl font-extrabold text-cyan-500 font-rounded mb-2">
-          CloudPool
-        </h1>
-        <p className="text-gray-400 font-medium text-center">
-          周预算工具 · 把省下的钱变成心愿
-        </p>
+        ) : (
+          <div className="w-12" />
+        )}
+        <div className="w-12" />
       </div>
       
-      {/* 登录表单 */}
-      <div className="px-6 pb-6 flex-1">
-        <div className="bg-white rounded-3xl p-6 shadow-sm max-w-sm mx-auto">
-          
+      {/* Logo 区域 */}
+      <div className="flex flex-col items-center px-6 pt-8 pb-6">
+        <h1 className="text-3xl font-extrabold text-cyan-500 font-rounded">
+          CloudPool
+        </h1>
+        <p className="text-gray-400 text-sm font-medium mt-1">内测版</p>
+      </div>
+      
+      {/* 表单卡片 */}
+      <div className="px-6 flex-1">
+        <div className="bg-white rounded-3xl p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 账号输入 */}
+            {/* 账号 */}
             <div>
-              <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-2 ml-1">
-                账号
-              </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="请输入账号"
-                className="w-full px-4 py-4 bg-gray-50 border-2 border-gray-100 rounded-2xl font-bold text-gray-700 placeholder-gray-300 focus:outline-none focus:bg-white focus:border-cyan-400 transition-all"
+                placeholder="账号"
+                className="w-full px-4 py-4 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
                 autoComplete="username"
                 autoCapitalize="off"
               />
             </div>
             
-            {/* 密码输入 */}
-            <div>
-              <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-2 ml-1">
-                密码
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="请输入密码"
-                  className="w-full px-4 py-4 pr-12 bg-gray-50 border-2 border-gray-100 rounded-2xl font-bold text-gray-700 placeholder-gray-300 focus:outline-none focus:bg-white focus:border-cyan-400 transition-all"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  {showPassword ? (
-                    <EyeOff size={20} strokeWidth={2} />
-                  ) : (
-                    <Eye size={20} strokeWidth={2} />
-                  )}
-                </button>
-              </div>
+            {/* 密码 */}
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="密码"
+                className="w-full px-4 py-4 pr-12 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-gray-400"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
             
             {/* 错误提示 */}
             {error && (
-              <div className="bg-red-50 border-2 border-red-100 rounded-2xl px-4 py-3">
-                <p className="text-red-500 font-bold text-sm text-center">{error}</p>
-              </div>
+              <p className="text-red-500 font-bold text-sm text-center">{error}</p>
             )}
             
             {/* 登录按钮 */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-4 bg-cyan-500 hover:bg-cyan-600 text-white font-extrabold text-lg rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-70 disabled:pointer-events-none border-b-4 border-cyan-600 active:border-b-0 active:translate-y-1"
+              className="w-full py-4 bg-cyan-500 text-white font-extrabold text-lg rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-70 border-b-4 border-cyan-600 active:border-b-2 active:translate-y-[2px] transition-all"
             >
               {isLoading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  登录中...
-                </>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 '登录'
               )}
             </button>
+            
+            {/* 游客模式 */}
+            {showGuestOption && onGuestMode && (
+              <button
+                type="button"
+                onClick={onGuestMode}
+                className="w-full py-4 bg-white text-gray-600 font-bold rounded-2xl border-2 border-gray-200 border-b-4 active:border-b-2 active:translate-y-[2px] transition-all"
+              >
+                跳过登录
+              </button>
+            )}
           </form>
           
-          {/* 游客模式 */}
-          {showGuestOption && onGuestMode && (
-            <div className="mt-4">
-              <button
-                onClick={handleGuestMode}
-                className="w-full py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-base rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-              >
-                游客模式
-              </button>
-              <p className="text-gray-300 text-xs text-center mt-2">
-                数据仅保存在本地，不会同步到云端
-              </p>
-            </div>
-          )}
-          
-          {/* 分隔线 */}
-          <div className="mt-6 pt-4 border-t border-gray-100">
+          {/* 获取账号 */}
+          <div className="mt-6 text-center">
             <button
               onClick={() => setShowGetAccount(true)}
-              className="w-full py-3 text-cyan-500 font-bold text-sm hover:text-cyan-600 transition-all"
+              className="text-gray-400 font-bold text-sm"
             >
-              没有账号？获取内测资格 →
+              获取内测账号
             </button>
           </div>
         </div>
       </div>
       
-      {/* 底部版本信息 */}
-      <div className="px-6 pb-8">
+      {/* 底部 */}
+      <div className="px-6 py-6">
         <p className="text-gray-300 text-xs text-center">
-          CloudPool v1.0.0 · 内测版本
+          v1.0 Beta
         </p>
       </div>
       
-      {/* 获取内测账号弹窗 */}
+      {/* 弹窗 */}
       <GetAccountModal
         isOpen={showGetAccount}
         onClose={() => setShowGetAccount(false)}

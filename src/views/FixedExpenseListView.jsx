@@ -1,5 +1,5 @@
 // FixedExpenseListView.jsx - 固定支出列表页面
-// 从消费全景-每个月入口进入
+// 修改：删除底部说明文字
 
 import React, { useState } from 'react';
 import { ArrowLeft, Plus, ChevronRight, Calendar } from 'lucide-react';
@@ -15,64 +15,55 @@ const FixedExpenseListView = ({
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
+        .font-chinese { 
+          font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+        }
       `}</style>
       
       {/* 导航栏 */}
-      <div className="px-6 pt-4 pb-2">
+      <div className="bg-white border-b-2 border-gray-200 px-4 pt-4 pb-3">
         <div className="flex items-center justify-between">
           <button 
             onClick={onBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
+            className="w-12 h-12 bg-white border-2 border-gray-200 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
           >
             <ArrowLeft size={24} strokeWidth={2.5} />
           </button>
-          <h1 className="text-lg font-bold text-gray-800">每个月</h1>
+          <h1 className="text-xl font-black text-gray-700 font-chinese">每个月</h1>
           <button 
             onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
-            className="w-12 h-12 bg-cyan-500 rounded-2xl flex items-center justify-center shadow-sm text-white hover:bg-cyan-600 active:scale-95 transition-all"
+            className="w-12 h-12 bg-amber-500 border-b-4 border-amber-600 rounded-2xl flex items-center justify-center text-white active:border-b-0 active:translate-y-1 transition-all"
           >
             <Plus size={24} strokeWidth={2.5} />
           </button>
         </div>
       </div>
       
-      <div className="px-6 pt-4">
-        {/* 汇总卡片 */}
-        <div className="bg-amber-500 rounded-3xl p-5 mb-6 relative overflow-hidden">
-          {/* 背景装饰 */}
-          <div className="absolute top-0 right-0 opacity-20">
-            <svg width="100" height="80" viewBox="0 0 100 80" fill="none">
-              <rect x="40" y="10" width="50" height="60" rx="8" fill="white"/>
-              <rect x="50" y="20" width="30" height="4" rx="2" fill="white"/>
-              <rect x="50" y="30" width="20" height="4" rx="2" fill="white"/>
-            </svg>
+      <div className="px-4 pt-6">
+        {/* 汇总卡片 - 多邻国风格 */}
+        <div className="bg-amber-500 rounded-2xl border-b-4 border-amber-600 p-5 mb-6">
+          <p className="text-white/70 text-sm font-bold mb-1 font-chinese">每月固定支出</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-white/60 text-2xl font-bold">¥</span>
+            <span className="text-white text-4xl font-black">
+              {totalAmount.toLocaleString()}
+            </span>
           </div>
-          
-          <div className="relative z-10">
-            <p className="text-white/70 text-sm font-medium mb-1">每月固定支出</p>
-            <div className="flex items-baseline gap-1">
-              <span className="text-white/60 text-2xl font-bold">¥</span>
-              <span className="text-white text-4xl font-extrabold font-rounded">
-                {totalAmount.toLocaleString()}
-              </span>
-            </div>
-            <p className="text-white/50 text-xs mt-2">
-              {enabledExpenses.length} 个项目
-            </p>
-          </div>
+          <p className="text-white/50 text-xs mt-2 font-chinese">
+            {enabledExpenses.length} 个项目
+          </p>
         </div>
         
         {/* 支出列表 */}
         {enabledExpenses.length > 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border-2 border-gray-200 border-b-4 overflow-hidden">
             {enabledExpenses.map((expense, index) => (
               <div 
                 key={expense.id}
                 onClick={() => navigateTo('editFixedExpense', { editingExpense: expense })}
                 className={`p-4 flex items-center justify-between cursor-pointer active:bg-gray-50 transition-all ${
-                  index !== enabledExpenses.length - 1 ? 'border-b border-gray-100' : ''
+                  index !== enabledExpenses.length - 1 ? 'border-b-2 border-gray-100' : ''
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -80,9 +71,9 @@ const FixedExpenseListView = ({
                     <Calendar size={20} className="text-amber-500" />
                   </div>
                   <div>
-                    <p className="font-bold text-gray-800">{expense.name}</p>
+                    <p className="font-bold text-gray-700 font-chinese">{expense.name}</p>
                     {expense.expireDate && (
-                      <p className="text-gray-400 text-xs mt-0.5">
+                      <p className="text-gray-400 text-xs mt-0.5 font-chinese">
                         到期：{expense.expireDate}
                       </p>
                     )}
@@ -96,30 +87,22 @@ const FixedExpenseListView = ({
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+          <div className="bg-white rounded-2xl border-2 border-gray-200 border-b-4 p-8 text-center">
             <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Calendar size={32} className="text-amber-400" />
             </div>
-            <p className="text-gray-800 font-bold mb-1">还没有固定支出</p>
-            <p className="text-gray-400 text-sm mb-4">
+            <p className="text-gray-700 font-bold mb-1 font-chinese">还没有固定支出</p>
+            <p className="text-gray-400 text-sm mb-4 font-chinese">
               添加房租、订阅等每月必付项目
             </p>
             <button
               onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
-              className="px-6 py-3 bg-amber-500 text-white font-bold rounded-xl active:scale-95 transition-all"
+              className="px-6 py-3 bg-amber-500 border-b-4 border-amber-600 text-white font-bold rounded-xl active:border-b-0 active:translate-y-1 transition-all"
             >
               添加第一个
             </button>
           </div>
         )}
-        
-        {/* 说明文字 */}
-        <div className="mt-6 text-center">
-          <p className="text-gray-300 text-xs leading-relaxed">
-            固定支出会自动从月预算中扣除<br/>
-            剩余金额才会分配到每周预算
-          </p>
-        </div>
       </div>
     </div>
   );

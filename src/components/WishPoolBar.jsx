@@ -1,6 +1,5 @@
 // WishPoolBar.jsx - 心愿池组件
-// 支持显示图标或用户上传的图片
-// 支持结算动画时金额递增显示
+// 修改：心愿球大小根据金额变化（30-90px），海底颜色改为#003B4F
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ChevronRight, Check } from 'lucide-react';
@@ -16,10 +15,26 @@ const globalBallPositionsCache = {
 
 // 设计系统颜色
 const POOL_COLOR = '#00BFDC';  // cyan-500
+const SEABED_COLOR = '#003B4F';  // 新海底颜色
 
 // 金额格式化（修复精度问题）
 const formatAmount = (amount) => {
   return Math.round(amount * 100) / 100;
+};
+
+// 根据金额计算球的大小（30-90px）- 绝对金额映射
+const calculateBallSize = (wishAmount) => {
+  const amount = wishAmount || 0;
+  
+  // 绝对金额映射到固定大小
+  if (amount >= 5000) return 90;
+  if (amount >= 3500) return 80;
+  if (amount >= 2000) return 70;
+  if (amount >= 1000) return 60;
+  if (amount >= 500) return 50;
+  if (amount >= 200) return 42;
+  if (amount >= 100) return 36;
+  return 30;  // < 100
 };
 
 const WishPoolBar = ({ 
@@ -40,8 +55,7 @@ const WishPoolBar = ({
   const SEABED_HEIGHT = 40;
   const MIN_LIQUID_HEIGHT = 60;
   const MAX_LIQUID_HEIGHT = 500;
-  const BALL_SIZE = 48;
-  const BALL_RADIUS = BALL_SIZE / 2;
+  const BASE_BALL_SIZE = 48;  // 基础参考大小
   
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -50,6 +64,15 @@ const WishPoolBar = ({
   const prevPoolAmountRef = useRef(poolAmount);
   const [containerWidth, setContainerWidth] = useState(400);
   const [ballPositions, setBallPositions] = useState([]);
+  
+  // 计算每个心愿球的大小
+  const wishSizes = useMemo(() => {
+    const sizes = {};
+    wishes.forEach(wish => {
+      sizes[wish.id] = calculateBallSize(wish.amount);
+    });
+    return sizes;
+  }, [wishes]);
   
   // 根据金额计算液体高度（包含动画金额）
   const totalAmount = poolAmount + animatingAmount;
@@ -93,14 +116,14 @@ const WishPoolBar = ({
   
   // 获取水面 Y 坐标
   const getFloatTargetY = useCallback(() => {
-    return liquidTop + 15 + BALL_RADIUS;
+    return liquidTop + 15 + BASE_BALL_SIZE / 2;
   }, [liquidTop]);
   
-  // 获取球的最大 Y 坐标
-  const getMaxYForBall = useCallback((ballX) => {
-    const centerX = ballX + BALL_RADIUS;
+  // 获取球的最大 Y 坐标（需要根据球的实际大小调整）
+  const getMaxYForBall = useCallback((ballX, ballSize = BASE_BALL_SIZE) => {
+    const centerX = ballX + ballSize / 2;
     const seabedY = getSeabedWaveY(centerX, seabedTop, containerWidth);
-    return seabedY - BALL_SIZE - 2;
+    return seabedY - ballSize - 2;
   }, [getSeabedWaveY, seabedTop, containerWidth]);
   
   // 监听容器宽度
@@ -135,7 +158,7 @@ const WishPoolBar = ({
         .map(pos => {
           const wish = allItems.find(w => w.id === pos.id);
           if (wish) {
-            return { ...pos, fulfilled: wish.fulfilled || false, icon: wish.icon, image: wish.image };
+            return { ...pos, fulfilled: wish.fulfilled || false, icon: wish.icon, image: wish.image, amount: wish.amount };
           }
           return null;
         })
@@ -143,17 +166,19 @@ const WishPoolBar = ({
       
       const existingIds = updatedPositions.map(p => p.id);
       allItems.filter(w => !existingIds.includes(w.id)).forEach((item) => {
-        const startX = padding + Math.random() * (containerWidth - padding * 2 - BALL_SIZE);
+        const ballSize = wishSizes[item.id] || BASE_BALL_SIZE;
+        const startX = padding + Math.random() * (containerWidth - padding * 2 - ballSize);
         updatedPositions.push({
           id: item.id,
           x: startX,
-          y: -BALL_SIZE - Math.random() * 30,
+          y: -ballSize - Math.random() * 30,
           vx: 0,
           vy: 0,
           settled: false,
           fulfilled: item.fulfilled || false,
           icon: item.icon,
-          image: item.image
+          image: item.image,
+          amount: item.amount
         });
       });
       
@@ -164,17 +189,19 @@ const WishPoolBar = ({
     }
     
     const newPositions = allItems.map((item, index) => {
-      const startX = padding + (index % 5) * (BALL_SIZE + 8) + Math.random() * 5;
+      const ballSize = wishSizes[item.id] || BASE_BALL_SIZE;
+      const startX = padding + (index % 5) * (ballSize + 8) + Math.random() * 5;
       return {
         id: item.id,
-        x: Math.min(startX, containerWidth - padding - BALL_SIZE),
-        y: -BALL_SIZE - index * 20,
+        x: Math.min(startX, containerWidth - padding - ballSize),
+        y: -ballSize - index * 20,
         vx: 0,
         vy: 0,
         settled: false,
         fulfilled: item.fulfilled || false,
         icon: item.icon,
-        image: item.image
+        image: item.image,
+        amount: item.amount
       };
     });
     
@@ -182,7 +209,7 @@ const WishPoolBar = ({
     globalBallPositionsCache.positions = newPositions;
     globalBallPositionsCache.initialized = true;
     globalBallPositionsCache.wishIds = currentWishIds;
-  }, [wishes, containerWidth, currentWishIds, padding]);
+  }, [wishes, containerWidth, currentWishIds, padding, wishSizes]);
   
   // Canvas 波浪动画
   useEffect(() => {
@@ -232,10 +259,10 @@ const WishPoolBar = ({
         ctx.fill();
       }
       
-      // 绘制海底
+      // 绘制海底 - 使用新颜色
       const gradient = ctx.createLinearGradient(0, seabedTop, 0, svgHeight);
-      gradient.addColorStop(0, 'rgba(87, 66, 98, 0.95)');
-      gradient.addColorStop(1, 'rgba(61, 45, 69, 1)');
+      gradient.addColorStop(0, SEABED_COLOR);
+      gradient.addColorStop(1, '#002535');  // 更深的底部颜色
       
       ctx.beginPath();
       ctx.fillStyle = gradient;
@@ -259,9 +286,12 @@ const WishPoolBar = ({
       
       setBallPositions(prev => {
         const updated = prev.map((ball) => {
+          const ballSize = wishSizes[ball.id] || BASE_BALL_SIZE;
+          const ballRadius = ballSize / 2;
+          
           if (ball.settled) {
             if (enableBuoyancy && hasBalance) {
-              const targetY = floatTargetY - BALL_RADIUS;
+              const targetY = floatTargetY - ballRadius;
               if (Math.abs(ball.y - targetY) > POSITION_SNAP_THRESHOLD * 2) {
                 return { ...ball, settled: false };
               }
@@ -274,7 +304,7 @@ const WishPoolBar = ({
           vy += GRAVITY;
           
           if (enableBuoyancy && hasBalance) {
-            const ballCenterY = y + BALL_RADIUS;
+            const ballCenterY = y + ballRadius;
             const targetY = floatTargetY;
             
             if (ballCenterY > targetY) {
@@ -289,7 +319,7 @@ const WishPoolBar = ({
               vx *= 0.9;
               
               if (distToTarget < POSITION_SNAP_THRESHOLD && Math.abs(vy) < 0.5) {
-                y = targetY - BALL_RADIUS;
+                y = targetY - ballRadius;
                 vy = 0;
               }
             }
@@ -305,29 +335,29 @@ const WishPoolBar = ({
             x = padding; 
             vx = Math.abs(vx) * BOUNCE;
           }
-          if (x > containerWidth - padding - BALL_SIZE) { 
-            x = containerWidth - padding - BALL_SIZE; 
+          if (x > containerWidth - padding - ballSize) { 
+            x = containerWidth - padding - ballSize; 
             vx = -Math.abs(vx) * BOUNCE;
           }
           
-          const maxY = getMaxYForBall(x);
+          const maxY = getMaxYForBall(x, ballSize);
           if (y > maxY) { 
             y = maxY; 
             vy = -Math.abs(vy) * BOUNCE;
           }
           
-          if (y < -BALL_SIZE) {
-            y = -BALL_SIZE;
+          if (y < -ballSize) {
+            y = -ballSize;
             vy = Math.abs(vy) * 0.5;
           }
           
           let settled = false;
           if (Math.abs(vx) < VELOCITY_THRESHOLD && Math.abs(vy) < VELOCITY_THRESHOLD) {
             if (enableBuoyancy && hasBalance) {
-              const ballCenterY = y + BALL_RADIUS;
+              const ballCenterY = y + ballRadius;
               const targetY = floatTargetY;
               if (Math.abs(ballCenterY - targetY) < POSITION_SNAP_THRESHOLD) {
-                y = targetY - BALL_RADIUS;
+                y = targetY - ballRadius;
                 vx = 0;
                 vy = 0;
                 settled = true;
@@ -342,16 +372,20 @@ const WishPoolBar = ({
           return { ...ball, x, y, vx, vy, settled };
         });
         
-        // 碰撞检测
+        // 碰撞检测 - 考虑不同大小的球
         for (let i = 0; i < updated.length; i++) {
           for (let j = i + 1; j < updated.length; j++) {
             const ball1 = updated[i];
             const ball2 = updated[j];
+            const size1 = wishSizes[ball1.id] || BASE_BALL_SIZE;
+            const size2 = wishSizes[ball2.id] || BASE_BALL_SIZE;
+            const radius1 = size1 / 2;
+            const radius2 = size2 / 2;
             
-            const dx = (ball2.x + BALL_RADIUS) - (ball1.x + BALL_RADIUS);
-            const dy = (ball2.y + BALL_RADIUS) - (ball1.y + BALL_RADIUS);
+            const dx = (ball2.x + radius2) - (ball1.x + radius1);
+            const dy = (ball2.y + radius2) - (ball1.y + radius1);
             const distance = Math.sqrt(dx * dx + dy * dy);
-            const minDist = BALL_SIZE + 2;
+            const minDist = radius1 + radius2 + 2;
             
             if (distance < minDist && distance > 0) {
               const overlap = (minDist - distance) / 2;
@@ -378,12 +412,13 @@ const WishPoolBar = ({
                 }
               }
               
-              [updated[i], updated[j]].forEach(b => {
+              [updated[i], updated[j]].forEach((b, idx) => {
+                const bSize = wishSizes[b.id] || BASE_BALL_SIZE;
                 if (b.x < padding) b.x = padding;
-                if (b.x > containerWidth - padding - BALL_SIZE) {
-                  b.x = containerWidth - padding - BALL_SIZE;
+                if (b.x > containerWidth - padding - bSize) {
+                  b.x = containerWidth - padding - bSize;
                 }
-                const maxY = getMaxYForBall(b.x);
+                const maxY = getMaxYForBall(b.x, bSize);
                 if (b.y > maxY) b.y = maxY;
               });
             }
@@ -405,7 +440,7 @@ const WishPoolBar = ({
     return () => { 
       if (animationRef.current) cancelAnimationFrame(animationRef.current); 
     };
-  }, [containerWidth, svgHeight, hasBalance, enableBuoyancy, liquidTop, seabedTop, getMaxYForBall, getFloatTargetY, getSeabedWaveY, padding]);
+  }, [containerWidth, svgHeight, hasBalance, enableBuoyancy, liquidTop, seabedTop, getMaxYForBall, getFloatTargetY, getSeabedWaveY, padding, wishSizes]);
   
   // 金额是否在动画中
   const isAnimating = animatingAmount > 0;
@@ -445,7 +480,7 @@ const WishPoolBar = ({
         </div>
       )}
       
-      {/* 心愿池标题和金额 - 使用设计系统风格 */}
+      {/* 心愿池标题和金额 */}
       <div 
         className="px-6 pb-3 cursor-pointer active:opacity-80" 
         style={{ height: `${HEADER_HEIGHT}px` }} 
@@ -485,15 +520,19 @@ const WishPoolBar = ({
           style={{ width: '100%', height: '100%' }}
         />
         
-        {/* 心愿球 */}
+        {/* 心愿球 - 大小根据金额变化 */}
         {ballPositions.map((ball) => {
           const wish = wishes.find(w => w.id === ball.id);
           if (!wish) return null;
           
+          const ballSize = wishSizes[ball.id] || BASE_BALL_SIZE;
           const hasImage = wish.image;
           const iconKey = wish.icon || 'ball1';
           const iconConfig = getWishIcon(iconKey);
           const IconComponent = iconConfig.icon;
+          
+          // 图标大小根据球的大小调整
+          const iconSize = Math.max(20, ballSize * 0.7);
           
           return (
             <div 
@@ -502,17 +541,16 @@ const WishPoolBar = ({
               style={{ 
                 left: `${ball.x}px`, 
                 top: `${ball.y}px`,
-                width: `${BALL_SIZE}px`,
-                height: `${BALL_SIZE}px`,
+                width: `${ballSize}px`,
+                height: `${ballSize}px`,
               }} 
-              title={wish.description} 
+              title={`${wish.description} - ¥${wish.amount || 0}`} 
               onClick={(e) => { 
                 e.stopPropagation(); 
                 onWishClick && onWishClick(wish); 
               }}
             >
               {hasImage ? (
-                /* 显示用户上传的图片 */
                 <img 
                   src={wish.image} 
                   alt={wish.description}
@@ -522,15 +560,14 @@ const WishPoolBar = ({
                   }}
                 />
               ) : (
-                /* 显示自定义 SVG 图标 */
-                <div className="w-10 h-10">
+                <div style={{ width: `${iconSize}px`, height: `${iconSize}px` }}>
                   <IconComponent className="w-full h-full" />
                 </div>
               )}
               
               {ball.fulfilled && (
                 <div className="absolute inset-0 bg-green-500 bg-opacity-50 flex items-center justify-center rounded-full">
-                  <Check size={24} className="text-white" strokeWidth={3} />
+                  <Check size={Math.max(16, ballSize * 0.4)} className="text-white" strokeWidth={3} />
                 </div>
               )}
             </div>
