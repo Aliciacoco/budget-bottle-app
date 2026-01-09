@@ -1,43 +1,121 @@
 // LoginView.jsx - 登录页面
-// 极简设计系统风格
+// 修复：按钮状态切换导致的屏幕闪烁问题
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ArrowLeft, Eye, EyeOff, X, Mail, MessageCircle } from 'lucide-react';
 import { login } from '../auth';
+
+// 安全的复制到剪贴板函数（防止页面滚动）
+const copyToClipboard = async (text) => {
+  // 优先使用现代 API（不会导致滚动）
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      // 继续尝试 fallback
+    }
+  }
+  
+  // 保存当前滚动位置
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  // 关键：使用 fixed 定位并放在视口内但不可见的位置
+  textarea.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 2px;
+    padding: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+    opacity: 0;
+    z-index: -1;
+  `;
+  
+  document.body.appendChild(textarea);
+  
+  // 使用 preventScroll 选项（如果支持）
+  try {
+    textarea.focus({ preventScroll: true });
+  } catch (e) {
+    textarea.focus();
+  }
+  
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+  
+  let success = false;
+  try {
+    success = document.execCommand('copy');
+  } catch (err) {
+    console.error('复制失败:', err);
+  }
+  
+  document.body.removeChild(textarea);
+  
+  // 恢复滚动位置（以防万一）
+  window.scrollTo(scrollX, scrollY);
+  
+  return success;
+};
+
+// 复制按钮组件 - 独立出来避免父组件重渲染
+const CopyButton = ({ text, type, copied, onCopy }) => {
+  const isCopied = copied === type;
+  
+  return (
+    <button
+      onClick={() => onCopy(text, type)}
+      className="w-14 h-8 rounded-xl text-sm font-bold flex-shrink-0 flex items-center justify-center border-2 transition-colors duration-150"
+      style={{
+        backgroundColor: isCopied ? '#22C55E' : 'white',
+        color: isCopied ? 'white' : '#4B5563',
+        borderColor: isCopied ? '#22C55E' : '#E5E7EB',
+      }}
+    >
+      {isCopied ? '✓' : '复制'}
+    </button>
+  );
+};
 
 // 获取内测账号弹窗
 const GetAccountModal = ({ isOpen, onClose }) => {
   const [copied, setCopied] = useState('');
   
-  const handleCopy = async (text, type) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(type);
-      setTimeout(() => setCopied(''), 2000);
-    } catch (err) {
-      const input = document.createElement('input');
-      input.value = text;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
+  const handleCopy = useCallback(async (text, type) => {
+    const success = await copyToClipboard(text);
+    if (success) {
       setCopied(type);
       setTimeout(() => setCopied(''), 2000);
     }
-  };
+  }, []);
   
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/50" />
       
-      <div className="relative bg-white rounded-3xl p-6 w-full max-w-sm">
+      <div 
+        className="relative bg-white rounded-3xl p-6 w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-extrabold text-gray-800">获取内测账号</h3>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 active:scale-95"
+            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 active:bg-gray-200"
           >
             <X size={18} />
           </button>
@@ -46,46 +124,38 @@ const GetAccountModal = ({ isOpen, onClose }) => {
         {/* 邮箱 */}
         <div className="bg-gray-50 rounded-2xl p-4 mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
               <Mail size={20} className="text-cyan-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-gray-400 text-xs font-bold">邮箱</p>
-              <p className="text-gray-700 font-bold truncate">beta@cloudpool.app</p>
+              <p className="text-gray-700 font-bold truncate">745018040@qq.com</p>
             </div>
-            <button
-              onClick={() => handleCopy('beta@cloudpool.app', 'email')}
-              className={`px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
-                copied === 'email'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-white text-gray-600 border-2 border-gray-200 active:scale-95'
-              }`}
-            >
-              {copied === 'email' ? '✓' : '复制'}
-            </button>
+            <CopyButton 
+              text="745018040@qq.com" 
+              type="email" 
+              copied={copied} 
+              onCopy={handleCopy} 
+            />
           </div>
         </div>
         
         {/* 微信 */}
         <div className="bg-gray-50 rounded-2xl p-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
               <MessageCircle size={20} className="text-green-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-gray-400 text-xs font-bold">微信</p>
-              <p className="text-gray-700 font-bold truncate">CloudPool_Beta</p>
+              <p className="text-gray-700 font-bold truncate">zkx062811</p>
             </div>
-            <button
-              onClick={() => handleCopy('CloudPool_Beta', 'wechat')}
-              className={`px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
-                copied === 'wechat'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-white text-gray-600 border-2 border-gray-200 active:scale-95'
-              }`}
-            >
-              {copied === 'wechat' ? '✓' : '复制'}
-            </button>
+            <CopyButton 
+              text="zkx062811" 
+              type="wechat" 
+              copied={copied} 
+              onCopy={handleCopy} 
+            />
           </div>
         </div>
       </div>
@@ -140,7 +210,7 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
         {onBack ? (
           <button 
             onClick={onBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 active:scale-95"
+            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 active:bg-gray-100"
           >
             <ArrowLeft size={24} strokeWidth={2.5} />
           </button>
@@ -155,7 +225,7 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
         <h1 className="text-3xl font-extrabold text-cyan-500 font-rounded">
           CloudPool
         </h1>
-        <p className="text-gray-400 text-sm font-medium mt-1">内测版</p>
+        <p className="text-gray-400 text-sm font-medium mt-1">周预算工具 · 内测版</p>
       </div>
       
       {/* 表单卡片 */}
@@ -219,7 +289,7 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
                 onClick={onGuestMode}
                 className="w-full py-4 bg-white text-gray-600 font-bold rounded-2xl border-2 border-gray-200 border-b-4 active:border-b-2 active:translate-y-[2px] transition-all"
               >
-                跳过登录
+                以游客身份体验
               </button>
             )}
           </form>
@@ -230,7 +300,7 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
               onClick={() => setShowGetAccount(true)}
               className="text-gray-400 font-bold text-sm"
             >
-              获取内测账号
+              获取内测账号，随时同步数据
             </button>
           </div>
         </div>

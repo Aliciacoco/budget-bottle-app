@@ -1,7 +1,7 @@
 // CalculatorModal.jsx - 计算器弹窗组件
-// 修复：底部安全区域 + 备注输入框点击问题
+// 修复：passive event listener 警告 + 底部安全区域
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 
 // 设计系统颜色
 const colors = {
@@ -31,6 +31,9 @@ const Calculator = ({
   const [display, setDisplay] = useState(value ? value.toString() : '');
   const [hasOperator, setHasOperator] = useState(false);
   const [note, setNote] = useState(noteValue);
+  
+  const panelRef = useRef(null);
+  const overlayRef = useRef(null);
   
   // 运算符列表
   const operators = ['+', '-', '×', '÷'];
@@ -117,19 +120,15 @@ const Calculator = ({
     onClose();
   }, [calculate, showNote, onNoteChange, note, onChange, onClose]);
   
-  const stopPropagation = useCallback((e) => {
-    e.stopPropagation();
-    e.preventDefault();
-  }, []);
-  
+  // 只阻止冒泡，不阻止默认行为（避免 passive event listener 警告）
   const stopPropagationOnly = useCallback((e) => {
     e.stopPropagation();
   }, []);
   
+  // 按钮点击处理器 - 只用于 onClick，不用于 touch 事件
   const createButtonHandler = useCallback((handler, ...args) => {
     return (e) => {
       e.stopPropagation();
-      e.preventDefault();
       handler(...args);
     };
   }, []);
@@ -140,21 +139,47 @@ const Calculator = ({
   const numberKeyClass = `${baseKeyClass} bg-white border-2 border-gray-200 text-gray-700 active:bg-gray-50`;
   const operatorKeyClass = `${baseKeyClass} bg-gray-100 border-2 border-gray-200 text-gray-500 active:bg-gray-200`;
   
+  // 关闭处理 - 只用于 onClick
   const handleClose = useCallback((e) => {
     e.stopPropagation();
-    e.preventDefault();
-    setTimeout(() => {
-      onClose();
-    }, 50);
+    onClose();
   }, [onClose]);
+
+  // 点击遮罩层关闭
+  const handleOverlayClick = useCallback((e) => {
+    // 只有点击遮罩层本身才关闭，点击面板内部不关闭
+    if (e.target === overlayRef.current) {
+      onClose();
+    }
+  }, [onClose]);
+
+  // 使用 useEffect 添加非 passive 的 touch 事件监听器（如果真的需要阻止默认行为）
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    
+    // 阻止面板上的 touchmove 滚动穿透
+    const preventScroll = (e) => {
+      // 只在面板内部阻止，允许输入框等可滚动元素正常工作
+      const target = e.target;
+      if (target.tagName === 'INPUT' || target.closest('.calc-content')) {
+        return;
+      }
+      e.preventDefault();
+    };
+    
+    panel.addEventListener('touchmove', preventScroll, { passive: false });
+    
+    return () => {
+      panel.removeEventListener('touchmove', preventScroll);
+    };
+  }, []);
 
   return (
     <div 
+      ref={overlayRef}
       className="calc-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" 
-      onClick={handleClose}
-      onTouchStart={stopPropagation}
-      onTouchEnd={handleClose}
-      onTouchMove={stopPropagation}
+      onClick={handleOverlayClick}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
@@ -165,41 +190,26 @@ const Calculator = ({
         }
         .animate-slide-up { animation: slide-up 0.3s ease-out; }
         .calc-panel {
-          touch-action: none;
           -webkit-touch-callout: none;
           -webkit-user-select: none;
           user-select: none;
-          /* 关键修复：底部安全区域 */
           padding-bottom: env(safe-area-inset-bottom, 0px);
-          /* 限制最大高度，防止超出屏幕 */
           max-height: 90vh;
           max-height: 90dvh;
         }
         .calc-panel button {
-          touch-action: manipulation;
           -webkit-tap-highlight-color: transparent;
         }
         .calc-panel input {
-          touch-action: auto;
           -webkit-user-select: text;
           user-select: text;
-        }
-        .calc-overlay {
-          touch-action: none;
-        }
-        /* 确保内容可滚动 */
-        .calc-content {
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
         }
       `}</style>
 
       <div 
+        ref={panelRef}
         className="calc-panel bg-white rounded-t-3xl w-full max-w-md overflow-hidden animate-slide-up shadow-2xl" 
-        onClick={stopPropagation}
-        onTouchEnd={stopPropagation}
-        onTouchStart={stopPropagation}
-        onTouchMove={stopPropagation}
+        onClick={stopPropagationOnly}
       >
         <div className="calc-content">
           {/* 显示区域 */}
@@ -228,59 +238,53 @@ const Calculator = ({
                 placeholder="备注：超市、外卖..." 
                 className="w-full px-4 py-3 bg-gray-100 border-2 border-gray-200 rounded-2xl text-gray-700 font-bold placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
                 onClick={stopPropagationOnly}
-                onTouchStart={stopPropagationOnly}
-                onTouchEnd={stopPropagationOnly}
-                onFocus={stopPropagationOnly}
               />
             </div>
           )}
           
-          {/* 数字键盘 - 4列布局，减小间距 */}
+          {/* 数字键盘 - 4列布局 */}
           <div className="p-3 grid grid-cols-4 gap-2">
             {/* 第一行: 1 2 3 ÷ */}
-            <button onTouchEnd={createButtonHandler(handleNumber, '1')} onClick={createButtonHandler(handleNumber, '1')} className={numberKeyClass}>1</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '2')} onClick={createButtonHandler(handleNumber, '2')} className={numberKeyClass}>2</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '3')} onClick={createButtonHandler(handleNumber, '3')} className={numberKeyClass}>3</button>
-            <button onTouchEnd={createButtonHandler(handleOperator, '÷')} onClick={createButtonHandler(handleOperator, '÷')} className={operatorKeyClass}>÷</button>
+            <button onClick={createButtonHandler(handleNumber, '1')} className={numberKeyClass}>1</button>
+            <button onClick={createButtonHandler(handleNumber, '2')} className={numberKeyClass}>2</button>
+            <button onClick={createButtonHandler(handleNumber, '3')} className={numberKeyClass}>3</button>
+            <button onClick={createButtonHandler(handleOperator, '÷')} className={operatorKeyClass}>÷</button>
             
             {/* 第二行: 4 5 6 × */}
-            <button onTouchEnd={createButtonHandler(handleNumber, '4')} onClick={createButtonHandler(handleNumber, '4')} className={numberKeyClass}>4</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '5')} onClick={createButtonHandler(handleNumber, '5')} className={numberKeyClass}>5</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '6')} onClick={createButtonHandler(handleNumber, '6')} className={numberKeyClass}>6</button>
-            <button onTouchEnd={createButtonHandler(handleOperator, '×')} onClick={createButtonHandler(handleOperator, '×')} className={operatorKeyClass}>×</button>
+            <button onClick={createButtonHandler(handleNumber, '4')} className={numberKeyClass}>4</button>
+            <button onClick={createButtonHandler(handleNumber, '5')} className={numberKeyClass}>5</button>
+            <button onClick={createButtonHandler(handleNumber, '6')} className={numberKeyClass}>6</button>
+            <button onClick={createButtonHandler(handleOperator, '×')} className={operatorKeyClass}>×</button>
             
             {/* 第三行: 7 8 9 − */}
-            <button onTouchEnd={createButtonHandler(handleNumber, '7')} onClick={createButtonHandler(handleNumber, '7')} className={numberKeyClass}>7</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '8')} onClick={createButtonHandler(handleNumber, '8')} className={numberKeyClass}>8</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '9')} onClick={createButtonHandler(handleNumber, '9')} className={numberKeyClass}>9</button>
-            <button onTouchEnd={createButtonHandler(handleOperator, '-')} onClick={createButtonHandler(handleOperator, '-')} className={operatorKeyClass}>−</button>
+            <button onClick={createButtonHandler(handleNumber, '7')} className={numberKeyClass}>7</button>
+            <button onClick={createButtonHandler(handleNumber, '8')} className={numberKeyClass}>8</button>
+            <button onClick={createButtonHandler(handleNumber, '9')} className={numberKeyClass}>9</button>
+            <button onClick={createButtonHandler(handleOperator, '-')} className={operatorKeyClass}>−</button>
             
             {/* 第四行: . 0 ⌫ + */}
-            <button onTouchEnd={createButtonHandler(handleNumber, '.')} onClick={createButtonHandler(handleNumber, '.')} className={numberKeyClass}>.</button>
-            <button onTouchEnd={createButtonHandler(handleNumber, '0')} onClick={createButtonHandler(handleNumber, '0')} className={numberKeyClass}>0</button>
-            <button onTouchEnd={createButtonHandler(handleBackspace)} onClick={createButtonHandler(handleBackspace)} className={operatorKeyClass}>⌫</button>
-            <button onTouchEnd={createButtonHandler(handleOperator, '+')} onClick={createButtonHandler(handleOperator, '+')} className={operatorKeyClass}>+</button>
+            <button onClick={createButtonHandler(handleNumber, '.')} className={numberKeyClass}>.</button>
+            <button onClick={createButtonHandler(handleNumber, '0')} className={numberKeyClass}>0</button>
+            <button onClick={createButtonHandler(handleBackspace)} className={operatorKeyClass}>⌫</button>
+            <button onClick={createButtonHandler(handleOperator, '+')} className={operatorKeyClass}>+</button>
             
             {/* 第五行: 取消 = 确认(占2格) */}
             <button 
-              onTouchEnd={handleClose}
               onClick={handleClose}
               className={`${baseKeyClass} bg-gray-50 border-2 border-gray-200 text-gray-400 active:bg-gray-100`}
             >
               取消
             </button>
             <button 
-              onTouchEnd={createButtonHandler(handleEquals)} 
               onClick={createButtonHandler(handleEquals)} 
               className={`${baseKeyClass} bg-amber-50 border-2 border-amber-200 text-amber-500 active:bg-amber-100`}
             >
               =
             </button>
             <button 
-              onTouchEnd={createButtonHandler(handleConfirm)}
               onClick={createButtonHandler(handleConfirm)}
               disabled={displayResult <= 0}
-              className="col-span-2 py-4 rounded-2xl text-xl font-extrabold text-white active:scale-95 transition-all border-b-4 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none select-none touch-manipulation"
+              className="col-span-2 py-4 rounded-2xl text-xl font-extrabold text-white active:scale-95 transition-all border-b-4 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none select-none"
               style={{ 
                 backgroundColor: colors.primary,
                 borderColor: colors.primaryDark

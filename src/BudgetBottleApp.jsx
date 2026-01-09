@@ -1,5 +1,6 @@
 // BudgetBottleApp.jsx - 主应用文件
-// 修改：缩小云朵和心愿池间距
+// 修改：电脑端内容居中，最大宽度480px，两侧灰色背景
+// 修复：SpendingOverviewView 传递 transactions 数据
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronRight } from 'lucide-react';
@@ -452,25 +453,29 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
             .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
           `}</style>
-          <div className="min-h-screen flex flex-col relative bg-gray-50">
-            <div className="absolute top-8 left-6 z-20">
-              <div className="h-8 w-24 bg-gray-200 rounded-lg skeleton-pulse" />
-            </div>
-            <div className="absolute top-8 right-6 z-20">
-              <div className="w-10 h-10 bg-gray-200 rounded-2xl skeleton-pulse" />
-            </div>
-            <div className="flex-1 flex flex-col items-center justify-center px-6">
-              <div className="text-center" style={{ marginBottom: '50px' }}>
-                <div className="h-10 w-32 bg-gray-200 rounded-xl mx-auto skeleton-pulse" />
-                <div className="h-4 w-48 bg-gray-100 rounded-lg mx-auto mt-3 skeleton-pulse" />
+          {/* 外层灰色背景 */}
+          <div className="min-h-screen bg-gray-100">
+            {/* 内容居中，最大宽度 480px */}
+            <div className="min-h-screen bg-gray-50 max-w-[480px] mx-auto relative shadow-sm flex flex-col">
+              <div className="absolute top-8 left-6 z-20">
+                <div className="h-8 w-24 bg-gray-200 rounded-lg skeleton-pulse" />
               </div>
-              <div className="w-full flex justify-center" style={{ maxWidth: '280px' }}>
-                <div className="w-[200px] h-[160px] bg-gray-100 rounded-[60px] skeleton-pulse" />
+              <div className="absolute top-8 right-6 z-20">
+                <div className="w-10 h-10 bg-gray-200 rounded-2xl skeleton-pulse" />
               </div>
-            </div>
-            <div className="px-6 pb-8">
-              <div className="h-6 w-24 bg-gray-200 rounded-lg skeleton-pulse mb-2" />
-              <div className="h-8 w-32 bg-gray-100 rounded-lg skeleton-pulse" />
+              <div className="flex-1 flex flex-col items-center justify-center px-6">
+                <div className="text-center" style={{ marginBottom: '50px' }}>
+                  <div className="h-10 w-32 bg-gray-200 rounded-xl mx-auto skeleton-pulse" />
+                  <div className="h-4 w-48 bg-gray-100 rounded-lg mx-auto mt-3 skeleton-pulse" />
+                </div>
+                <div className="w-full flex justify-center" style={{ maxWidth: '280px' }}>
+                  <div className="w-[200px] h-[160px] bg-gray-100 rounded-[60px] skeleton-pulse" />
+                </div>
+              </div>
+              <div className="px-6 pb-8">
+                <div className="h-6 w-24 bg-gray-200 rounded-lg skeleton-pulse mb-2" />
+                <div className="h-8 w-32 bg-gray-100 rounded-lg skeleton-pulse" />
+              </div>
             </div>
           </div>
         </>
@@ -484,106 +489,107 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
         `}</style>
 
-        <div 
-          ref={homeContainerRef} 
-          className="min-h-screen bg-white"
-        >
-          {/* 主内容区域 */}
-          <div className="min-h-screen flex flex-col relative">
-            {/* 顶部导航按钮区域 */}
-            <div className="absolute top-0 left-0 right-0 h-20 z-20 px-6 flex items-center justify-between border-b border-[#F3F4F6]">
-              {/* 左上角：CloudPool Logo */}
-              <button 
-                onClick={() => navigateTo('brandMenu')} 
-                className="text-cyan-500 font-extrabold text-xl font-rounded active:scale-95 transition-all"
-              >
-                CloudPool
-              </button>
-              {/* 右上角：消费全景入口 */}
-              <button 
-                onClick={() => navigateTo('spendingOverview')} 
-                className="w-10 h-10 rounded-2xl flex items-center justify-center hover:shadow-md transition-all active:scale-95 bg-white"
-              >
-                <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect fill="white"/>
-                  <rect x="6" y="6" width="23" height="6" rx="3" fill="#00C3E0"/>
-                  <path d="M26 12L26 6L26.2143 6C27.7528 6 29 7.34312 29 9C29 10.6569 27.7528 12 26.2143 12L26 12Z" fill="#00C7E4"/>
-                  <path d="M9 12L9 6L8.78571 6C7.24719 6 6 7.34312 6 9C6 10.6569 7.24719 12 8.78571 12L9 12Z" fill="#00C7E4"/>
-                  <rect x="6" y="15" width="23" height="6" rx="3" fill="#FFC800"/>
-                  <path d="M26 21L26 15L26.2143 15C27.7528 15 29 16.3431 29 18C29 19.6569 27.7528 21 26.2143 21L26 21Z" fill="#FFC200"/>
-                  <path d="M9 21L9 15L8.78571 15C7.24719 15 6 16.3431 6 18C6 19.6569 7.24719 21 8.78571 21L9 21Z" fill="#FFC200"/>
-                  <rect x="6" y="24" width="23" height="6" rx="3" fill="#A568CC"/>
-                  <path d="M26 30L26 24L26.2143 24C27.7528 24 29 25.3431 29 27C29 28.6569 27.7528 30 26.2143 30L26 30Z" fill="#CE82FF"/>
-                  <path d="M9 30L9 24L8.78571 24C7.24719 24 6 25.3431 6 27C6 28.6569 7.24719 30 8.78571 30L9 30Z" fill="#CE82FF"/>
-                </svg>
-
-              </button>
-            </div>
-            
-            {pinnedBudgets.length > 0 && (
-              <DraggableBudgetIcons
-                budgets={pinnedBudgets}
-                onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
-                cloudRef={cloudRef}
-                setSpecialBudgets={setSpecialBudgets}
-              />
-            )}
-            
-            {/* 主内容 - 缩小云朵和心愿池间距 */}
-            <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10" style={{ paddingBottom: '0px' }}>
-              <div 
-                className="text-center cursor-pointer active:opacity-80" 
-                style={{ marginBottom: '12px' }}
-                onClick={() => navigateTo('transactionList')}
-              >
-                <h1 
-                  className="font-extrabold leading-none font-rounded"
-                  style={{ fontSize: '32px', color: colors.primary }}
+        {/* 外层灰色背景 */}
+        <div className="min-h-screen bg-gray-100">
+          {/* 内容居中，最大宽度 480px */}
+          <div 
+            ref={homeContainerRef} 
+            className="min-h-screen bg-white max-w-[480px] mx-auto relative shadow-sm"
+          >
+            {/* 主内容区域 */}
+            <div className="min-h-screen flex flex-col relative">
+              {/* 顶部导航按钮区域 */}
+              <div className="absolute top-0 left-0 right-0 h-20 z-20 px-6 flex items-center justify-between border-b border-[#F3F4F6]">
+                {/* 左上角：CloudPool Logo */}
+                <button 
+                  onClick={() => navigateTo('brandMenu')} 
+                  className="text-cyan-500 font-extrabold text-xl font-rounded active:scale-95 transition-all"
                 >
-                  <span className="text-2xl mr-1 text-gray-300">¥</span>
-                  {displayRemaining.toLocaleString()}
-                </h1>
+                  CloudPool
+                </button>
+                {/* 右上角：消费全景入口 */}
+                <button 
+                  onClick={() => navigateTo('spendingOverview')} 
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center hover:shadow-md transition-all active:scale-95 bg-white"
+                >
+                  <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect fill="white"/>
+                    <rect x="6" y="6" width="23" height="6" rx="3" fill="#00C3E0"/>
+                    <path d="M26 12L26 6L26.2143 6C27.7528 6 29 7.34312 29 9C29 10.6569 27.7528 12 26.2143 12L26 12Z" fill="#00C7E4"/>
+                    <path d="M9 12L9 6L8.78571 6C7.24719 6 6 7.34312 6 9C6 10.6569 7.24719 12 8.78571 12L9 12Z" fill="#00C7E4"/>
+                    <rect x="6" y="15" width="23" height="6" rx="3" fill="#FFC800"/>
+                    <path d="M26 21L26 15L26.2143 15C27.7528 15 29 16.3431 29 18C29 19.6569 27.7528 21 26.2143 21L26 21Z" fill="#FFC200"/>
+                    <path d="M9 21L9 15L8.78571 15C7.24719 15 6 16.3431 6 18C6 19.6569 7.24719 21 8.78571 21L9 21Z" fill="#FFC200"/>
+                    <rect x="6" y="24" width="23" height="6" rx="3" fill="#A568CC"/>
+                    <path d="M26 30L26 24L26.2143 24C27.7528 24 29 25.3431 29 27C29 28.6569 27.7528 30 26.2143 30L26 30Z" fill="#CE82FF"/>
+                    <path d="M9 30L9 24L8.78571 24C7.24719 24 6 25.3431 6 27C6 28.6569 7.24719 30 8.78571 30L9 30Z" fill="#CE82FF"/>
+                  </svg>
+                </button>
+              </div>
+              
+              {pinnedBudgets.length > 0 && (
+                <DraggableBudgetIcons
+                  budgets={pinnedBudgets}
+                  onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+                  cloudRef={cloudRef}
+                  setSpecialBudgets={setSpecialBudgets}
+                />
+              )}
+              
+              {/* 主内容 - 缩小云朵和心愿池间距 */}
+              <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10" style={{ paddingBottom: '0px' }}>
                 <div 
-                  className="flex items-center gap-1 mt-3 font-bold mx-auto justify-center text-gray-400"
-                  style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
+                  className="text-center cursor-pointer active:opacity-80" 
+                  style={{ marginBottom: '12px' }}
+                  onClick={() => navigateTo('transactionList')}
                 >
-                  <span className="text-sm">{subtitles[subtitleIndex]}</span>
-                  <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
+                  <h1 
+                    className="font-extrabold leading-none font-rounded"
+                    style={{ fontSize: '32px', color: colors.primary }}
+                  >
+                    <span className="text-2xl mr-1 text-gray-300">¥</span>
+                    {displayRemaining.toLocaleString()}
+                  </h1>
+                  <div 
+                    className="flex items-center gap-1 mt-3 font-bold mx-auto justify-center text-gray-400"
+                    style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
+                  >
+                    <span className="text-sm">{subtitles[subtitleIndex]}</span>
+                    <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
+                  </div>
+                </div>
+                
+                <div 
+                  ref={cloudRef}
+                  className="w-full flex justify-center" 
+                  style={{ maxWidth: '320px', marginBottom: '-40px' }}
+                >
+                  <BudgetCloud 
+                    remaining={displayRemaining} 
+                    total={budgetAmount} 
+                    spent={weeklySpent} 
+                    onClick={openAddTransactionModal}
+                    drainProgress={drainProgress}
+                    isShaking={settlementPhase === 'shaking'}
+                  />
                 </div>
               </div>
               
-              <div 
-                ref={cloudRef}
-                className="w-full flex justify-center" 
-                style={{ maxWidth: '320px', marginBottom: '-40px' }}
-              >
-                <BudgetCloud 
-                  remaining={displayRemaining} 
-                  total={budgetAmount} 
-                  spent={weeklySpent} 
-                  onClick={openAddTransactionModal}
-                  drainProgress={drainProgress}
-                  isShaking={settlementPhase === 'shaking'}
+              <div ref={poolRef} style={{ 
+                transform: 'translateY(-50px)', 
+                position: 'relative', 
+                zIndex: 20 
+              }}>
+                <WishPoolBar 
+                  poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 
+                  animatingAmount={poolFillAmount}
+                  wishes={wishes} 
+                  onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
+                  onPoolClick={() => navigateTo('wishPoolDetail')} 
+                  debugMode={isDebugMode} 
+                  onDebugChange={handleDebugChange}
                 />
               </div>
-            </div>
-            
-            <div ref={poolRef} style={{ 
-    // 删掉 marginTop
-    // 使用 transform 直接向上位移，负数越大，上移越多
-    transform: 'translateY(-50px)', 
-    position: 'relative', 
-    zIndex: 20 
-  }}>
-              <WishPoolBar 
-                poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 
-                animatingAmount={poolFillAmount}
-                wishes={wishes} 
-                onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
-                onPoolClick={() => navigateTo('wishPoolDetail')} 
-                debugMode={isDebugMode} 
-                onDebugChange={handleDebugChange}
-              />
             </div>
           </div>
         </div>
@@ -655,9 +661,11 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           <SpendingOverviewView
             onBack={() => window.history.back()}
             navigateTo={navigateTo}
+            weeklySpent={weeklySpent}
+            weeklyBudget={budgetAmount}
             weeklyRemaining={displayRemaining}
+            transactions={transactions}
             fixedExpensesTotal={fixedExpensesTotal}
-            fixedExpensesCount={enabledExpenses.length}
             specialBudgetsCount={specialBudgets.length}
           />
         );
@@ -777,7 +785,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   };
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       {renderCurrentView()}
     </div>
   );

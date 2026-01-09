@@ -1,100 +1,77 @@
-// TransactionListView.jsx - 交易记录列表视图
-// 修复：1. 周切换功能 2. ISO周号显示 3. 箭头和日期在一个按钮中
+// TransactionListView.jsx
+// 优化：按钮统一化 (色块+图标风格)，更符合参考图
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Edit2, Calendar, ArrowLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Edit3 } from 'lucide-react'; // 👈 引入 Edit3
 import { getWeeklyBudget, getTransactions, saveWeeklyBudget, createTransaction } from '../api';
-import { loadFromCache, saveToCache, formatDate, formatShortDate, getWeekInfo } from '../utils/helpers';
+import { loadFromCache, saveToCache, formatDate, getWeekInfo } from '../utils/helpers';
 import Calculator from '../components/CalculatorModal';
+import BudgetCloud from '../components/BudgetCloud';
 
 // 导入设计系统组件
 import { 
   PageContainer, 
-  LoadingOverlay
+  ContentArea,
+  ListGroup,
+  EmptyState,
+  LoadingOverlay,
+  colors,
 } from '../components/design-system';
 
-// --- 静态云朵组件 ---
-const BudgetCloud = ({ remaining, total, hasBudget }) => {
-  const cloudPathData = "M170.621 38C201.558 38 228.755 53.2859 244.555 76.4834L245.299 77.5938L245.306 77.6035C247.53 81.0058 251.079 83.3252 255.11 84.0352L255.502 84.0986L255.511 84.0996C299.858 90.8163 334 127.546 334 172.283C334 221.589 294.443 261.625 245.621 261.625H104.896L104.79 261.619C61.1843 259.33 26 226.502 26 185.76C26 154.771 46.4474 128.375 75.3525 116.578L75.3594 116.575C79.8465 114.754 83.1194 110.742 84.1465 105.889C92.3483 67.057 128.005 38.0001 170.621 38Z";
-  const percent = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
-  const liquidColor = remaining >= 0 ? '#06B6D4' : '#EF4444';
-  const waterHeight = 224 * percent;
-  const waterY = 262 - waterHeight; 
-
-  return (
-    <div className="w-[100px] aspect-[308/224] mx-auto">
-      {!hasBudget ? (
-        <svg viewBox="26 38 308 224" className="w-full h-full drop-shadow-sm opacity-50">
-           <path d={cloudPathData} fill="none" stroke="#D1D5DB" strokeWidth="6" strokeDasharray="12 8" />
-           <text x="180" y="160" textAnchor="middle" fill="#9CA3AF" fontSize="36" fontWeight="bold">?</text>
-        </svg>
-      ) : (
-        <svg viewBox="26 38 308 224" className="w-full h-full drop-shadow-lg">
-          <defs>
-            <clipPath id="cloudShapeList">
-              <path d={cloudPathData} />
-            </clipPath>
-          </defs>
-          <path d={cloudPathData} fill="#F3F4F6" />
-          <rect 
-            x="26" 
-            y={waterY} 
-            width="308" 
-            height={waterHeight} 
-            fill={liquidColor} 
-            clipPath="url(#cloudShapeList)"
-            className="transition-all duration-700 ease-out" 
-          />
-          <path d={cloudPathData} fill="white" opacity="0.15" style={{mixBlendMode: 'overlay'}} pointerEvents="none"/>
-        </svg>
-      )}
-    </div>
-  );
-};
-
-// --- 紧凑日期格式：12.22 ---
+// --- 紧凑日期格式 ---
 const formatCompactDate = (date) => {
   const d = new Date(date);
   return `${d.getMonth() + 1}.${d.getDate()}`;
 };
 
-// --- 周切换器组件（箭头和日期在一个按钮中）---
+// --- 周选择器组件 ---
 const WeekSelector = ({ weekInfo, onPrev, onNext, canGoNext, isLoading }) => {
-  const dateRangeText = `${formatCompactDate(weekInfo.weekStart)} - ${formatCompactDate(weekInfo.weekEnd)}`;
+  const dateRangeText = `${formatCompactDate(weekInfo.weekStart)}-${formatCompactDate(weekInfo.weekEnd)}`;
+  const weekLabel = `${weekInfo.isoYear || weekInfo.year}年第${weekInfo.isoWeekNumber || weekInfo.weekNumber}周`;
   
   return (
-    <div className="bg-white rounded-2xl shadow-sm flex items-center overflow-hidden">
-      {/* 左箭头 */}
+    <div className="bg-white rounded-2xl border-b-4 border-gray-200 flex items-center overflow-hidden border border-gray-100">
       <button 
         onClick={onPrev}
         disabled={isLoading}
-        className="px-3 py-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-all disabled:opacity-50 border-r border-gray-100"
+        className="px-3 py-3 text-gray-300 hover:text-gray-400 hover:bg-gray-50 active:bg-gray-100 transition-all disabled:opacity-50"
       >
-        <ChevronLeft size={20} strokeWidth={2.5} />
+        <ChevronLeft size={20} strokeWidth={2} />
       </button>
-      
-      {/* 日期范围 */}
-      <div className="px-4 py-2.5">
-        <span className="text-sm font-extrabold text-gray-700">
-          {dateRangeText}
-        </span>
+      <div className="px-3 py-2 text-center min-w-[85px]">
+        <p className="text-base font-extrabold text-gray-600 leading-tight">{dateRangeText}</p>
+        <p className="text-xs text-gray-400 mt-0.5">{weekLabel}</p>
       </div>
-      
-      {/* 右箭头 */}
       <button 
         onClick={onNext}
         disabled={!canGoNext || isLoading}
-        className={`px-3 py-2.5 transition-all border-l border-gray-100 ${
-          canGoNext && !isLoading 
-            ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 active:bg-gray-100' 
-            : 'text-gray-200 cursor-not-allowed'
+        className={`px-3 py-3 transition-all ${
+          canGoNext && !isLoading ? 'text-gray-300 hover:text-gray-500 hover:bg-gray-50 active:bg-gray-100' : 'text-gray-200 cursor-not-allowed'
         }`}
       >
-        <ChevronRight size={20} strokeWidth={2.5} />
+        <ChevronRight size={20} strokeWidth={2} />
       </button>
     </div>
   );
 };
+
+// --- 消费记录列表项 ---
+const TransactionItem = ({ description, time, amount, onClick, showArrow = true }) => (
+  <button
+    onClick={onClick}
+    className="w-full rounded-[16px] px-5 py-4 flex items-center justify-between active:scale-[0.99] active:bg-gray-200 transition-all"
+    style={{ backgroundColor: colors.gray[100] }}
+  >
+    <div className="text-left">
+      <p className="text-gray-800 font-bold">{description}</p>
+      <p className="text-gray-400 text-xs mt-0.5">{time}</p>
+    </div>
+    <div className="flex items-center gap-2">
+      <span className="font-extrabold text-red-500 text-lg">¥{amount.toLocaleString()}</span>
+      {showArrow && <ChevronRight size={18} className="text-gray-300" strokeWidth={2} />}
+    </div>
+  </button>
+);
 
 const TransactionListView = ({
   weekInfo,
@@ -113,7 +90,7 @@ const TransactionListView = ({
   const [showExpenseCalculator, setShowExpenseCalculator] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 同步父组件的数据变化
+  // ... (数据逻辑保持不变，省略中间代码) ...
   useEffect(() => {
     if (viewingWeekInfo.weekKey === weekInfo.weekKey) {
       setViewingWeekBudget(weeklyBudget);
@@ -121,11 +98,7 @@ const TransactionListView = ({
     }
   }, [weeklyBudget, transactions, weekInfo.weekKey, viewingWeekInfo.weekKey]);
 
-  const viewingWeeklySpent = useMemo(() => 
-    viewingTransactions.reduce((sum, t) => sum + t.amount, 0), 
-    [viewingTransactions]
-  );
-  
+  const viewingWeeklySpent = useMemo(() => viewingTransactions.reduce((sum, t) => sum + t.amount, 0), [viewingTransactions]);
   const viewingRemaining = (viewingWeekBudget?.amount || 0) - viewingWeeklySpent;
   const isCurrentWeek = viewingWeekInfo.weekKey === weekInfo.weekKey;
   const hasBudget = viewingWeekBudget && viewingWeekBudget.amount > 0;
@@ -137,7 +110,6 @@ const TransactionListView = ({
       acc[date].push(trans);
       return acc;
     }, {});
-
     Object.keys(groups).forEach(date => {
       groups[date].sort((a, b) => {
         if (a.time && b.time) return b.time.localeCompare(a.time);
@@ -146,7 +118,6 @@ const TransactionListView = ({
         return timeB - timeA;
       });
     });
-
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [viewingTransactions]);
 
@@ -159,31 +130,20 @@ const TransactionListView = ({
   const loadWeekData = async (targetWeekInfo) => {
     setIsLoadingWeek(true);
     try {
-      // 如果是当前周，使用父组件的数据
       if (targetWeekInfo.weekKey === weekInfo.weekKey) {
         setViewingWeekBudget(weeklyBudget);
         setViewingTransactions(transactions);
         setIsLoadingWeek(false);
         return;
       }
-      
-      // 否则从服务器加载
       const [budgetResult, transResult] = await Promise.all([
         getWeeklyBudget(targetWeekInfo.weekKey),
         getTransactions(targetWeekInfo.weekKey)
       ]);
-      
-      if (budgetResult.success) {
-        setViewingWeekBudget(budgetResult.data);
-      } else {
-        setViewingWeekBudget(null);
-      }
-      
-      if (transResult.success) {
-        setViewingTransactions(transResult.data);
-      } else {
-        setViewingTransactions([]);
-      }
+      if (budgetResult.success) setViewingWeekBudget(budgetResult.data);
+      else setViewingWeekBudget(null);
+      if (transResult.success) setViewingTransactions(transResult.data);
+      else setViewingTransactions([]);
     } catch (error) {
       console.error('加载周数据失败:', error);
       setViewingWeekBudget(null);
@@ -204,7 +164,6 @@ const TransactionListView = ({
 
   const handleSetBudget = async (amount) => {
     if (!amount || amount <= 0 || !isDataReady) return;
-    
     setIsSaving(true);
     try {
       const result = await saveWeeklyBudget(weekInfo.weekKey, amount);
@@ -216,19 +175,12 @@ const TransactionListView = ({
         }
         setViewingWeekBudget(result.data);
         setShowBudgetCalculator(false);
-      } else {
-        alert('保存失败: ' + result.error);
-      }
-    } catch (error) {
-      alert('保存失败，请重试');
-    } finally {
-      setIsSaving(false);
-    }
+      } else { alert('保存失败: ' + result.error); }
+    } catch (error) { alert('保存失败，请重试'); } finally { setIsSaving(false); }
   };
 
   const handleAddExpense = async (amount, note) => {
     if (!amount || amount <= 0) return;
-    
     setIsSaving(true);
     try {
       const now = new Date();
@@ -239,46 +191,40 @@ const TransactionListView = ({
         amount,
         note || '消费'
       );
-      
       if (result.success) {
         const newTransactions = [result.data, ...transactions];
         setTransactions(newTransactions);
         setViewingTransactions(newTransactions);
         setShowExpenseCalculator(false);
-      } else {
-        alert('记录失败: ' + result.error);
-      }
-    } catch (error) {
-      alert('记录失败，请重试');
-    } finally {
-      setIsSaving(false);
-    }
+      } else { alert('记录失败: ' + result.error); }
+    } catch (error) { alert('记录失败，请重试'); } finally { setIsSaving(false); }
   };
 
   const today = formatDate(new Date());
   const yesterday = formatDate(new Date(Date.now() - 86400000));
-
   const getDateLabel = (date) => {
     if (date === today) return '今天';
     if (date === yesterday) return '昨天';
-    return date;
+    const d = new Date(date);
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
   };
 
   return (
-    <PageContainer bg="gray" className="relative pb-8">
-      {/* 固定透明导航栏 */}
-      <div className="fixed top-0 left-0 right-0 z-20 px-4 pt-4 pb-2 pointer-events-none">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          {/* 左侧：返回按钮 */}
-          <button 
-            onClick={() => window.history.back()}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-          
-          {/* 右侧：日期范围选择器（箭头和日期在一个按钮中） */}
-          <div className="pointer-events-auto">
+    <PageContainer>
+      <style>{`.cloud-no-mouth svg:last-child { display: none !important; }`}</style>
+      
+      {/* 1. 导航栏 (Fixed) */}
+      <div className="fixed top-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="max-w-[480px] mx-auto px-[30px] pt-4 pb-2">
+          <div className="flex items-center justify-between pointer-events-auto w-full">
+            <button 
+              onClick={() => window.history.back()}
+              className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 active:bg-gray-300 pointer-events-auto active:scale-95 transition-all"
+            >
+              <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
             <WeekSelector 
               weekInfo={viewingWeekInfo}
               onPrev={() => changeWeek('prev')}
@@ -290,165 +236,129 @@ const TransactionListView = ({
         </div>
       </div>
 
-      {/* 顶部内容区 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-4">
+      {/* 2. 内容区域 */}
+      <ContentArea className="pt-24 space-y-5 pb-20">
         
-        {/* 周标签胶囊 - 显示ISO年周号 */}
-        <div className="flex justify-center">
-          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-            isCurrentWeek 
-              ? 'bg-cyan-100 text-cyan-600' 
-              : 'bg-amber-100 text-amber-600'
-          }`}>
-            <span>{viewingWeekInfo.isoYear || viewingWeekInfo.year}年</span>
-            <span>第{viewingWeekInfo.isoWeekNumber || viewingWeekInfo.weekNumber}周</span>
-            {!isCurrentWeek && <span>· 历史</span>}
-          </div>
-        </div>
-
         {/* 预算概览卡片 */}
-        <div className={`bg-white rounded-3xl p-5 shadow-sm transition-opacity duration-300 ${isLoadingWeek ? 'opacity-60' : 'opacity-100'}`}>
-          <div className="flex items-center gap-6">
-            <div className="flex-shrink-0">
+        <div 
+          className={`rounded-[24px] p-5 transition-opacity duration-300 ${isLoadingWeek ? 'opacity-60' : 'opacity-100'}`}
+          style={{ backgroundColor: colors.gray[100] }}
+        >
+          {/* 云朵 */}
+          <div className="flex justify-center cloud-no-mouth" style={{ height: '150px', marginBottom: '-5px' }}>
+            <div className="transform scale-[0.5] origin-top">
               <BudgetCloud 
-                remaining={viewingRemaining} 
-                total={viewingWeekBudget?.amount || 0} 
-                hasBudget={hasBudget} 
+                remaining={viewingRemaining}
+                total={viewingWeekBudget?.amount || 0}
+                spent={viewingWeeklySpent}
               />
             </div>
-            
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400 font-bold text-sm">本周预算</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-extrabold text-gray-700">
-                    ¥{viewingWeekBudget?.amount?.toLocaleString() || 0}
-                  </span>
-                  {isCurrentWeek && (
-                    <button 
-                      onClick={() => setShowBudgetCalculator(true)}
-                      className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center text-cyan-500 hover:bg-cyan-200 active:scale-95 transition-all"
-                    >
-                      <Edit2 size={14} strokeWidth={2.5} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400 font-bold text-sm">已支出</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-extrabold text-red-500">
-                    ¥{viewingWeeklySpent.toLocaleString()}
-                  </span>
-                  {isCurrentWeek && (
-                    <button 
-                      onClick={() => setShowExpenseCalculator(true)}
-                      className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center text-red-500 hover:bg-red-200 active:scale-95 transition-all"
-                    >
-                      <Plus size={16} strokeWidth={3} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-between pt-2 border-t-2 border-gray-100">
-                <span className="text-gray-400 font-bold text-sm">剩余额度</span>
-                <span className={`text-xl font-extrabold ${viewingRemaining >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  ¥{viewingRemaining.toLocaleString()}
-                </span>
-              </div>
+          </div>
+          
+          {/* 剩余金额 */}
+          <div className="text-center mb-5">
+            <p className={`font-extrabold font-rounded ${viewingRemaining >= 0 ? 'text-cyan-500' : 'text-red-500'}`} style={{ fontSize: '22px' }}>
+              ¥{viewingRemaining.toLocaleString()}
+            </p>
+            <p className="text-gray-400 text-sm mt-1">本周剩余额度</p>
+          </div>
+          
+          {/* 本周预算条 */}
+          <div className="bg-white rounded-[14px] px-4 py-3 flex items-center justify-between mb-3 border border-gray-200">
+            <span className="text-gray-400 font-medium text-sm">本周预算</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-extrabold text-gray-700">
+                ¥{viewingWeekBudget?.amount?.toLocaleString() || 0}
+              </span>
+              {isCurrentWeek && (
+                // 👇 优化：浅青色背景 + 青色笔
+                <button 
+                  onClick={() => setShowBudgetCalculator(true)}
+                  className="w-7 h-7 rounded-lg bg-cyan-50 flex items-center justify-center text-cyan-500 active:bg-cyan-100 active:scale-95 transition-all"
+                >
+                  <Edit3 size={14} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* 已支出条 */}
+          <div className="bg-white rounded-[14px] px-4 py-3 flex items-center justify-between border border-gray-200">
+            <span className="text-gray-400 font-medium text-sm">已支出</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-extrabold text-red-500">
+                ¥{viewingWeeklySpent.toLocaleString()}
+              </span>
+              {isCurrentWeek && (
+                // 👇 优化：浅红色背景 + 红色加号
+                <button 
+                  onClick={() => setShowExpenseCalculator(true)}
+                  className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-red-500 active:bg-red-100 active:scale-95 transition-all"
+                >
+                  <Plus size={16} strokeWidth={3} />
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 交易列表 */}
-        <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="font-extrabold text-gray-700">消费记录</h2>
+        {/* 消费记录列表 */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-lg font-extrabold text-gray-700">消费记录</h2>
           </div>
-          
-          <div className="p-4">
-            {isLoadingWeek ? (
-              <div className="py-12 text-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-200 border-t-cyan-500 mx-auto"></div>
-                <p className="text-gray-400 font-bold mt-4">加载中...</p>
-              </div>
-            ) : groupedTransactions.length === 0 ? (
-              <div className="py-12 text-center">
-                <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                  <Calendar size={32} className="text-gray-300" />
-                </div>
-                <p className="text-gray-400 font-bold mb-2">本周还没有消费记录</p>
-                {isCurrentWeek && (
-                  <button 
-                    onClick={() => setShowExpenseCalculator(true)}
-                    className="mt-4 px-6 py-3 bg-cyan-500 text-white rounded-2xl font-bold shadow-sm hover:bg-cyan-400 active:scale-95 transition-all"
-                  >
-                    <Plus size={18} className="inline mr-1" />记一笔
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {groupedTransactions.map(([date, dayTransactions]) => (
+
+          {isLoadingWeek ? (
+            <div className="py-12 text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-200 border-t-cyan-500 mx-auto"></div>
+              <p className="text-gray-400 font-bold mt-4">加载中...</p>
+            </div>
+          ) : groupedTransactions.length === 0 ? (
+            <EmptyState 
+              icon={Calendar}
+              message="本周还没有消费记录"
+              action={isCurrentWeek && (
+                <button 
+                  onClick={() => setShowExpenseCalculator(true)}
+                  className="mt-4 px-6 py-3 bg-cyan-500 text-white rounded-2xl font-bold shadow-sm hover:bg-cyan-400 active:scale-95 transition-all flex items-center gap-1"
+                >
+                  <Plus size={18} /> 记一笔
+                </button>
+              )}
+            />
+          ) : (
+            <div className="space-y-5">
+              {groupedTransactions.map(([date, dayTransactions]) => {
+                const dayTotal = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
+                return (
                   <div key={date}>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-bold text-gray-400">{getDateLabel(date)}</h3>
-                      <span className="text-xs font-bold text-gray-300">
-                        共 ¥{dayTransactions.reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
-                      </span>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <span className="text-sm text-gray-400">{getDateLabel(date)}</span>
+                      <span className="text-xs text-gray-400">共 ¥{dayTotal.toLocaleString()}</span>
                     </div>
-                    <div className="space-y-2">
+                    <ListGroup>
                       {dayTransactions.map(trans => (
-                        <div 
-                          key={trans.id} 
+                        <TransactionItem
+                          key={trans.id}
+                          description={trans.description || '消费'}
+                          time={trans.time || ''}
+                          amount={trans.amount}
                           onClick={isCurrentWeek ? () => navigateTo('editTransaction', { editingTransaction: trans }) : undefined}
-                          className={`bg-gray-50 rounded-2xl p-4 flex justify-between items-center ${
-                            isCurrentWeek ? 'cursor-pointer active:bg-gray-100 active:scale-[0.99] transition-all' : ''
-                          }`}
-                        >
-                          <div>
-                            <span className="font-bold text-gray-700">{trans.description || '消费'}</span>
-                            <span className="text-xs text-gray-400 ml-2">{trans.time}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-red-500">-¥{trans.amount.toLocaleString()}</span>
-                            {isCurrentWeek && <ChevronRight size={18} className="text-gray-300" strokeWidth={2.5} />}
-                          </div>
-                        </div>
+                          showArrow={isCurrentWeek}
+                        />
                       ))}
-                    </div>
+                    </ListGroup>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      </ContentArea>
 
-      {/* 预算计算器 */}
-      {showBudgetCalculator && (
-        <Calculator
-          value={viewingWeekBudget?.amount || 0}
-          onChange={(amount) => handleSetBudget(amount)}
-          onClose={() => setShowBudgetCalculator(false)}
-          title="设置本周预算"
-          showNote={false}
-        />
-      )}
-
-      {/* 消费计算器 */}
-      {showExpenseCalculator && (
-        <Calculator
-          value={0}
-          onChange={(amount, note) => handleAddExpense(amount, note)}
-          onClose={() => setShowExpenseCalculator(false)}
-          title="记录消费"
-          showNote={true}
-        />
-      )}
-
+      {/* 模态框 */}
+      {showBudgetCalculator && <Calculator value={viewingWeekBudget?.amount || 0} onChange={handleSetBudget} onClose={() => setShowBudgetCalculator(false)} title="设置本周预算" showNote={false} />}
+      {showExpenseCalculator && <Calculator value={0} onChange={handleAddExpense} onClose={() => setShowExpenseCalculator(false)} title="记录消费" showNote={true} />}
       <LoadingOverlay isLoading={isSaving} />
     </PageContainer>
   );

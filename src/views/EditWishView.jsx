@@ -1,13 +1,21 @@
 // EditWishView.jsx - 查看/编辑心愿页面
-// 修复：夸克浏览器删除问题 - 使用乐观更新
+// 修复：实现心愿和撤销功能
 
-import React, { useState, useRef } from 'react';
-import { Edit2, Trash2, Heart, Undo2, ImagePlus, Palette, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Edit2, Trash2, Heart, Undo2, ImagePlus, Palette, X, Camera } from 'lucide-react';
 import AV from '../leancloud';
-import { createWish, updateWish, deleteWish, getWishes, getWishPool, createWishPoolHistory, getWishPoolHistory, deleteWishPoolHistory } from '../api';
+import { 
+  createWish, 
+  updateWish, 
+  deleteWish, 
+  getWishes, 
+  getWishPool, 
+  createWishPoolHistory, 
+  getWishPoolHistory, 
+  deleteWishPoolHistory 
+} from '../api';
 import { WISH_ICONS, getWishIcon, WISH_ICON_KEYS } from '../constants/wishIcons.jsx';
 import Calculator from '../components/CalculatorModal';
-
 import { CelebrationAnimation } from '../components/animations';
 
 import { 
@@ -27,11 +35,13 @@ const ensureHttps = (url) => {
   return url.replace(/^http:\/\//i, 'https://');
 };
 
+const formatAmount = (amount) => Math.round(amount * 100) / 100;
+
 const EditWishView = ({ 
   editingWish, 
   wishes, 
   setWishes, 
-  wishPoolAmount, 
+  wishPoolAmount: propWishPoolAmount, 
   setWishPoolAmount
 }) => {
   const isNew = !editingWish?.id;
@@ -39,50 +49,73 @@ const EditWishView = ({
   const [description, setDescription] = useState(editingWish?.description || '');
   const [amount, setAmount] = useState(editingWish?.amount || 0);
   const [selectedIcon, setSelectedIcon] = useState(editingWish?.icon || 'ball1');
-  
   const [imageMode, setImageMode] = useState(editingWish?.image ? 'image' : 'icon');
   const [imageUrl, setImageUrl] = useState(ensureHttps(editingWish?.image) || '');
   const [imagePreview, setImagePreview] = useState(ensureHttps(editingWish?.image) || '');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  
   const [showCalculator, setShowCalculator] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
-  
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showFulfillConfirm, setShowFulfillConfirm] = useState(false);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  const wishAmount = amount || 0;
-  const canFulfill = wishPoolAmount >= wishAmount && wishAmount > 0;
-  const isFulfilled = editingWish?.fulfilled || false;
   
-  const progressPercent = Math.min((wishPoolAmount / wishAmount) * 100, 100);
-  const remainingAmount = Math.max(0, wishAmount - wishPoolAmount);
+  // 本地心愿池余额状态 - 确保有最新值
+  const [localPoolAmount, setLocalPoolAmount] = useState(formatAmount(propWishPoolAmount || 0));
 
-  const handleAmountChange = (newAmount) => {
-    setAmount(newAmount);
-    setShowCalculator(false);
+  // 组件挂载时获取最新心愿池余额
+  useEffect(() => {
+    const fetchPoolAmount = async () => {
+      try {
+        const result = await getWishPool();
+        if (result.success) {
+          const amount = formatAmount(result.data.amount);
+          setLocalPoolAmount(amount);
+          console.log('✅ 获取心愿池余额:', amount);
+        }
+      } catch (error) {
+        console.error('获取心愿池余额失败:', error);
+      }
+    };
+    fetchPoolAmount();
+  }, []);
+
+  // 同步 prop 变化
+  useEffect(() => {
+    if (propWishPoolAmount !== undefined && propWishPoolAmount !== null) {
+      setLocalPoolAmount(formatAmount(propWishPoolAmount));
+    }
+  }, [propWishPoolAmount]);
+
+  const wishAmount = amount || editingWish?.amount || 0;
+  const canFulfill = localPoolAmount >= wishAmount && wishAmount > 0;
+  const isFulfilled = editingWish?.fulfilled || false;
+  const progressPercent = wishAmount > 0 ? Math.min((localPoolAmount / wishAmount) * 100, 100) : 0;
+  const remainingAmount = Math.max(0, wishAmount - localPoolAmount);
+
+  // 处理金额变更
+  const handleAmountChange = (newAmount) => { 
+    setAmount(newAmount); 
+    setShowCalculator(false); 
   };
 
+  // 处理图片选择
   const handleImageSelect = async (e) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]; 
     if (!file) return;
-    
-    if (!file.type.startsWith('image/')) {
-      alert('请选择图片文件');
-      return;
+    if (!file.type.startsWith('image/')) { 
+      alert('请选择图片文件'); 
+      return; 
     }
-    
-    if (file.size > 5 * 1024 * 1024) {
-      alert('图片大小不能超过 5MB');
-      return;
+    if (file.size > 5 * 1024 * 1024) { 
+      alert('图片大小不能超过 5MB'); 
+      return; 
     }
     
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setImagePreview(e.target.result);
+    reader.onload = (e) => { 
+      setImagePreview(e.target.result); 
     };
     reader.readAsDataURL(file);
     
@@ -91,26 +124,26 @@ const EditWishView = ({
       const avFile = new AV.File(file.name, file);
       const savedFile = await avFile.save();
       const secureUrl = ensureHttps(savedFile.url());
-      setImageUrl(secureUrl);
+      setImageUrl(secureUrl); 
       setImageMode('image');
-    } catch (error) {
-      console.error('图片上传失败:', error);
-      alert('图片上传失败，请重试');
-      setImagePreview('');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-  
-  const handleRemoveImage = () => {
-    setImageUrl('');
-    setImagePreview('');
-    setImageMode('icon');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    } catch (error) { 
+      console.error('图片上传失败:', error); 
+      alert('图片上传失败，请重试'); 
+      setImagePreview(''); 
+    } finally { 
+      setIsUploading(false); 
     }
   };
 
+  // 移除图片
+  const handleRemoveImage = () => { 
+    setImageUrl(''); 
+    setImagePreview(''); 
+    setImageMode('icon'); 
+    if (fileInputRef.current) fileInputRef.current.value = ''; 
+  };
+
+  // 保存心愿
   const handleSave = async () => {
     if (!description || !amount) return;
     setIsLoading(true);
@@ -124,87 +157,176 @@ const EditWishView = ({
       } else {
         result = await updateWish(editingWish.id, description, amount, finalImage, isFulfilled, finalIcon);
       }
+      
       if (result.success) {
         const wishResult = await getWishes();
         if (wishResult.success) setWishes(wishResult.data);
         window.history.back();
-      } else {
-        alert('保存失败: ' + result.error);
+      } else { 
+        alert('保存失败: ' + result.error); 
       }
-    } finally { setIsLoading(false); }
-  };
-
-  // 【核心修复】乐观更新：先更新UI并跳转，后台静默删除
-  const handleDelete = async () => {
-    if (!editingWish?.id) return;
-    
-    const wishId = editingWish.id;
-    
-    setShowDeleteConfirm(false);
-    
-    // 1. 立即更新本地状态（乐观更新）
-    setWishes(prev => prev.filter(w => w.id !== wishId));
-    
-    // 2. 立即返回上一页
-    window.history.back();
-    
-    // 3. 后台静默执行删除
-    try {
-      await deleteWish(wishId);
-      console.log('✅ 心愿删除成功');
     } catch (error) {
-      console.warn('删除请求未完成，数据将在下次同步时处理:', error);
+      console.error('保存失败:', error);
+      alert('保存失败');
+    } finally { 
+      setIsLoading(false); 
     }
   };
 
+  // 删除心愿
+  const handleDelete = async () => {
+    if (!editingWish?.id) return;
+    const wishId = editingWish.id;
+    setShowDeleteConfirm(false);
+    setWishes(prev => prev.filter(w => w.id !== wishId));
+    window.history.back();
+    
+    try { 
+      await deleteWish(wishId); 
+      console.log('✅ 心愿删除成功'); 
+    } catch (error) { 
+      console.warn('删除请求未完成:', error); 
+    }
+  };
+
+  // 实现心愿
   const confirmFulfill = async () => {
-    if (!canFulfill) return;
-    setShowFulfillConfirm(false); setIsLoading(true);
+    if (!canFulfill) {
+      console.log('❌ 无法实现心愿: canFulfill =', canFulfill, 'localPoolAmount =', localPoolAmount, 'wishAmount =', wishAmount);
+      return;
+    }
+    
+    setShowFulfillConfirm(false); 
+    setIsLoading(true);
+    
     try {
+      console.log('🎯 开始实现心愿:', description, '金额:', wishAmount);
+      
+      // 1. 创建扣款记录
       const historyKey = 'WISH-' + editingWish.id + '-' + Date.now();
-      await createWishPoolHistory(historyKey, 0, 0, -wishAmount, true, description, editingWish.id);
+      const historyResult = await createWishPoolHistory(
+        historyKey, 
+        0, 
+        0, 
+        -wishAmount,  // 负数表示扣款
+        true,         // isDeduction = true
+        description, 
+        editingWish.id
+      );
+      console.log('📝 创建扣款记录:', historyResult);
+      
+      // 2. 更新心愿状态为已实现
       const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
-      const result = await updateWish(editingWish.id, description, wishAmount, finalImage, true, finalIcon);
+      const result = await updateWish(
+        editingWish.id, 
+        description, 
+        wishAmount, 
+        finalImage, 
+        true,  // fulfilled = true
+        finalIcon
+      );
+      console.log('📝 更新心愿状态:', result);
+      
       if (result.success) {
+        // 3. 刷新心愿池余额
         const poolResult = await getWishPool();
-        if (poolResult.success) setWishPoolAmount(poolResult.data.amount);
+        if (poolResult.success) {
+          const newAmount = formatAmount(poolResult.data.amount);
+          setLocalPoolAmount(newAmount);
+          setWishPoolAmount(newAmount);
+          console.log('💰 新心愿池余额:', newAmount);
+        }
+        
+        // 4. 刷新心愿列表
         const wishResult = await getWishes();
-        if (wishResult.success) setWishes(wishResult.data);
+        if (wishResult.success) {
+          setWishes(wishResult.data);
+        }
         
         setIsLoading(false);
+        // 5. 显示庆祝动画
         setShowCelebration(true);
+      } else {
+        throw new Error(result.error || '更新失败');
       }
-    } catch (e) { alert('操作失败'); setIsLoading(false); }
-  };
-  
-  const handleCelebrationComplete = () => {
-    setShowCelebration(false);
-    window.history.back();
+    } catch (e) { 
+      console.error('❌ 实现心愿失败:', e);
+      alert('操作失败: ' + e.message); 
+      setIsLoading(false); 
+    }
   };
 
+  // 庆祝动画完成后返回
+  const handleCelebrationComplete = () => { 
+    setShowCelebration(false); 
+    window.history.back(); 
+  };
+
+  // 撤销实现
   const confirmRevoke = async () => {
-    setShowRevokeConfirm(false); setIsLoading(true);
+    setShowRevokeConfirm(false); 
+    setIsLoading(true);
+    
     try {
+      console.log('↩️ 开始撤销心愿:', editingWish.id);
+      
+      // 1. 查找并删除扣款记录
       const historyResult = await getWishPoolHistory();
       if (historyResult.success) {
-        const targetRecord = historyResult.data.find(h => h.wishId === editingWish.id && h.isDeduction);
-        if (targetRecord) await deleteWishPoolHistory(targetRecord.id);
+        const targetRecord = historyResult.data.find(
+          h => h.wishId === editingWish.id && h.isDeduction
+        );
+        if (targetRecord) {
+          await deleteWishPoolHistory(targetRecord.id);
+          console.log('🗑️ 删除扣款记录:', targetRecord.id);
+        } else {
+          console.log('⚠️ 未找到扣款记录');
+        }
       }
+      
+      // 2. 更新心愿状态为未实现
       const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
-      const result = await updateWish(editingWish.id, description, wishAmount, finalImage, false, finalIcon);
+      const result = await updateWish(
+        editingWish.id, 
+        description, 
+        wishAmount, 
+        finalImage, 
+        false,  // fulfilled = false
+        finalIcon
+      );
+      console.log('📝 更新心愿状态:', result);
+      
       if (result.success) {
+        // 3. 刷新心愿池余额
         const poolResult = await getWishPool();
-        if (poolResult.success) setWishPoolAmount(poolResult.data.amount);
+        if (poolResult.success) {
+          const newAmount = formatAmount(poolResult.data.amount);
+          setLocalPoolAmount(newAmount);
+          setWishPoolAmount(newAmount);
+          console.log('💰 新心愿池余额:', newAmount);
+        }
+        
+        // 4. 刷新心愿列表
         const wishResult = await getWishes();
-        if (wishResult.success) setWishes(wishResult.data);
+        if (wishResult.success) {
+          setWishes(wishResult.data);
+        }
+        
         window.history.back();
+      } else {
+        throw new Error(result.error || '更新失败');
       }
-    } catch (e) { alert('操作失败'); } finally { setIsLoading(false); }
+    } catch (e) { 
+      console.error('❌ 撤销失败:', e);
+      alert('操作失败: ' + e.message); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
-  // --- 查看模式 ---
+  // --- 查看模式 (View Mode) ---
   if (!isEditMode && !isNew) {
     const hasImage = editingWish?.image;
     const secureImageUrl = ensureHttps(editingWish?.image);
@@ -212,134 +334,165 @@ const EditWishView = ({
     const IconComponent = viewIconConfig.icon;
     
     return (
-      <PageContainer bg="gray">
+      <PageContainer>
         <TransparentNavBar 
           onBack={() => window.history.back()}
           rightButtons={[
             { icon: Edit2, onClick: () => setIsEditMode(true), variant: 'primary' },
             { icon: Trash2, onClick: () => setShowDeleteConfirm(true), variant: 'danger' }
           ]}
+          variant={hasImage ? "white" : "default"} 
         />
         
-        <ContentArea className="pt-20 max-w-lg mx-auto">
-          <div className="bg-white rounded-3xl overflow-hidden shadow-sm border-b-4 border-gray-200 mb-6">
-            <div className="aspect-[4/3] w-full bg-gradient-to-br from-cyan-50 to-gray-100 flex items-center justify-center overflow-hidden relative">
-              {hasImage ? (
-                <img 
-                  src={secureImageUrl}
-                  alt={description}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-32 h-32">
-                  <IconComponent className="w-full h-full" />
-                </div>
-              )}
+        <div className={hasImage ? "" : "pt-20 px-6 max-w-lg mx-auto"}>
+          
+          {hasImage ? (
+            <div className="relative w-full aspect-square bg-gray-100">
+              <img 
+                src={secureImageUrl}
+                alt={description}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
               
-              <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-md text-white px-4 py-2 rounded-xl font-extrabold font-rounded text-lg shadow-lg border-2 border-white/20">
+              <div className="absolute bottom-6 left-6 text-white">
+                <div className="text-3xl font-extrabold font-rounded mb-1">¥{wishAmount.toLocaleString()}</div>
+                <div className="text-white/80 font-medium text-sm">{isFulfilled ? '已达成' : '心愿金额'}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 mb-6">
+              <div className="w-32 h-32 text-cyan-500 mb-6">
+                <IconComponent className="w-full h-full" strokeWidth={1.5} />
+              </div>
+              <div className="text-4xl font-black text-gray-800 font-rounded">
                 ¥{wishAmount.toLocaleString()}
               </div>
-              
-              {isFulfilled && (
-                <div className="absolute top-4 left-4 bg-amber-400 text-white px-4 py-1.5 rounded-xl font-extrabold text-sm shadow-lg rotate-[-5deg] border-2 border-amber-500">
-                  🏆 已达成
-                </div>
-              )}
             </div>
+          )}
+
+          <div className={`px-6 pb-20 max-w-lg mx-auto ${hasImage ? "pt-6" : ""}`}>
+            <h1 className="text-3xl font-extrabold text-gray-800 leading-tight mb-8">
+              {description}
+            </h1>
             
-            <div className="p-6">
-              <h1 className="text-2xl font-extrabold text-gray-700 leading-tight mb-4">
-                {description}
-              </h1>
-              
-              {!isFulfilled && (
-                <div>
-                  <div className="flex justify-between text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">
-                    <span>存钱进度</span>
-                    <span className={`font-rounded ${canFulfill ? "text-green-500" : "text-gray-400"}`}>
-                      {Math.round(progressPercent)}%
-                    </span>
-                  </div>
-                  <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-500 ${canFulfill ? 'bg-green-500' : 'bg-cyan-400'}`}
-                      style={{ width: `${progressPercent}%` }}
-                    />
-                  </div>
-                  <div className="mt-3 text-center">
-                    {canFulfill ? (
-                      <span className="text-green-500 font-bold text-sm">🎉 钱够啦，快去买！</span>
-                    ) : (
-                      <span className="text-red-400 font-bold text-sm font-rounded">还差 ¥{remainingAmount.toLocaleString()}</span>
-                    )}
-                  </div>
+            {!isFulfilled && (
+              <div className="bg-gray-50 rounded-3xl p-6 mb-8">
+                <div className="flex justify-between text-sm font-bold text-gray-400 mb-3 uppercase tracking-wide">
+                  <span>存钱进度</span>
+                  <span className={`font-rounded ${canFulfill ? "text-green-500" : "text-gray-400"}`}>
+                    {Math.round(progressPercent)}%
+                  </span>
                 </div>
+                <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${canFulfill ? 'bg-green-500' : 'bg-cyan-400'}`}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <div className="mt-4 text-center">
+                  {canFulfill ? (
+                    <span className="text-green-500 font-bold text-base">🎉 钱够啦，快去买！</span>
+                  ) : (
+                    <span className="text-red-400 font-bold text-base font-rounded">
+                      还差 ¥{remainingAmount.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                
+                {/* 调试信息 - 生产环境可删除 */}
+                <div className="mt-2 text-xs text-gray-300 text-center">
+                  心愿池: ¥{localPoolAmount} / 需要: ¥{wishAmount}
+                </div>
+              </div>
+            )}
+
+            <div>
+              {isFulfilled ? (
+                <DuoButton 
+                  onClick={() => setShowRevokeConfirm(true)}
+                  variant="warning"
+                  fullWidth
+                  size="lg"
+                  icon={Undo2}
+                >
+                  撤销实现状态
+                </DuoButton>
+              ) : (
+                <DuoButton 
+                  onClick={() => {
+                    console.log('点击实现心愿按钮, canFulfill:', canFulfill);
+                    if (canFulfill) {
+                      setShowFulfillConfirm(true);
+                    }
+                  }}
+                  disabled={!canFulfill}
+                  variant={canFulfill ? 'success' : 'secondary'}
+                  fullWidth
+                  size="lg"
+                  icon={Heart}
+                >
+                  {canFulfill ? '立即实现心愿' : '余额不足，继续加油'}
+                </DuoButton>
               )}
             </div>
           </div>
+        </div>
 
-          <div className="pb-6">
-            {isFulfilled ? (
-              <DuoButton 
-                onClick={() => setShowRevokeConfirm(true)}
-                variant="warning"
-                fullWidth
-                size="lg"
-                icon={Undo2}
-              >
-                撤销实现状态
-              </DuoButton>
-            ) : (
-              <DuoButton 
-                onClick={() => setShowFulfillConfirm(true)}
-                disabled={!canFulfill}
-                variant={canFulfill ? 'success' : 'secondary'}
-                fullWidth
-                size="lg"
-                icon={Heart}
-              >
-                {canFulfill ? '立即实现心愿' : '余额不足，继续加油'}
-              </DuoButton>
-            )}
-          </div>
-        </ContentArea>
-
-        <Modal
-          isOpen={showFulfillConfirm}
-          onClose={() => setShowFulfillConfirm(false)}
+        {/* 实现心愿确认弹窗 */}
+        <Modal 
+          isOpen={showFulfillConfirm} 
+          onClose={() => setShowFulfillConfirm(false)} 
           title="✨ 梦想成真时刻"
         >
           <p className="text-gray-500 font-bold text-center mb-6">
             确定要花费 <span className="text-cyan-500 font-rounded">¥{wishAmount}</span> 吗？
           </p>
           <div className="flex gap-3">
-            <DuoButton onClick={() => setShowFulfillConfirm(false)} variant="secondary" fullWidth>
+            <DuoButton 
+              onClick={() => setShowFulfillConfirm(false)} 
+              variant="secondary" 
+              fullWidth
+            >
               再等等
             </DuoButton>
-            <DuoButton onClick={confirmFulfill} variant="success" fullWidth>
+            <DuoButton 
+              onClick={confirmFulfill} 
+              variant="success" 
+              fullWidth
+            >
               买买买！
             </DuoButton>
           </div>
         </Modal>
         
-        <Modal
-          isOpen={showRevokeConfirm}
-          onClose={() => setShowRevokeConfirm(false)}
+        {/* 撤销确认弹窗 */}
+        <Modal 
+          isOpen={showRevokeConfirm} 
+          onClose={() => setShowRevokeConfirm(false)} 
           title="↩️ 撤销操作"
         >
           <p className="text-gray-500 font-bold text-center mb-6">
             <span className="text-cyan-500 font-rounded">¥{wishAmount}</span> 将退回心愿池。
           </p>
           <div className="flex gap-3">
-            <DuoButton onClick={() => setShowRevokeConfirm(false)} variant="secondary" fullWidth>
+            <DuoButton 
+              onClick={() => setShowRevokeConfirm(false)} 
+              variant="secondary" 
+              fullWidth
+            >
               取消
             </DuoButton>
-            <DuoButton onClick={confirmRevoke} variant="warning" fullWidth>
+            <DuoButton 
+              onClick={confirmRevoke} 
+              variant="warning" 
+              fullWidth
+            >
               确认撤销
             </DuoButton>
           </div>
         </Modal>
-
+        
         <ConfirmModal 
           isOpen={showDeleteConfirm} 
           title="删除心愿" 
@@ -351,87 +504,88 @@ const EditWishView = ({
         <LoadingOverlay isLoading={isLoading} />
         
         {showCelebration && (
-          <CelebrationAnimation
-            wishName={description}
-            amount={wishAmount}
-            wishIcon={selectedIcon}
-            wishImage={imageMode === 'image' ? ensureHttps(imageUrl) : null}
-            onComplete={handleCelebrationComplete}
+          <CelebrationAnimation 
+            wishName={description} 
+            amount={wishAmount} 
+            wishIcon={selectedIcon} 
+            wishImage={imageMode === 'image' ? ensureHttps(imageUrl) : null} 
+            onComplete={handleCelebrationComplete} 
           />
         )}
       </PageContainer>
     );
   }
 
-  // --- 编辑模式 ---
+  // --- 编辑模式 (Edit Mode) ---
   return (
-    <PageContainer bg="gray">
+    <PageContainer>
       <TransparentNavBar 
         onBack={() => isNew ? window.history.back() : setIsEditMode(false)}
       />
 
-      <ContentArea className="pt-20 space-y-6 max-w-lg mx-auto">
-        <div className="text-center mb-2">
+      <ContentArea className="pt-20 space-y-8 max-w-lg mx-auto">
+        <div className="text-center px-4">
           <h1 className="text-2xl font-extrabold text-gray-800">
-            {isNew ? '添加新心愿' : '编辑心愿'}
+            {isNew ? '许个愿望' : '编辑心愿'}
           </h1>
-          <p className="text-gray-400 font-medium text-sm mt-1">
-            {isNew ? '写下你想要的东西' : '修改心愿内容'}
-          </p>
         </div>
         
-        <div className="bg-white rounded-3xl p-6 shadow-sm space-y-5">
+        <div className="space-y-6">
           <div>
-            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">心愿名称</label>
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
+              心愿名称
+            </label>
             <DuoInput 
               type="text" 
               value={description} 
               onChange={(e) => setDescription(e.target.value)} 
               placeholder="例如：Switch 游戏机"
               autoFocus={isNew}
+              size="lg"
             />
           </div>
           
           <div>
-            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">需要多少钱</label>
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs mb-3 ml-1">
+              需要多少钱
+            </label>
             <AmountInput
               value={amount}
               onClick={() => setShowCalculator(true)}
+              size="lg"
             />
           </div>
         </div>
         
-        <div className="bg-white rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs ml-1">选择展示方式</label>
-            <div className="flex bg-gray-100 rounded-xl p-1">
+        {/* 图片/图标选择区域 */}
+        <div>
+          <div className="flex items-center justify-between mb-4 px-1">
+            <label className="block text-gray-400 font-bold uppercase tracking-wider text-xs">
+              展示方式
+            </label>
+            
+            <div className="flex bg-gray-100 rounded-full p-1">
               <button
                 onClick={() => setImageMode('icon')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
-                  imageMode === 'icon' 
-                    ? 'bg-white text-cyan-500 shadow-sm' 
-                    : 'text-gray-400 hover:text-gray-600'
+                className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  imageMode === 'icon' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
-                <Palette size={16} />
-                图标
+                <Palette size={14} /> 图标
               </button>
               <button
                 onClick={() => setImageMode('image')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
-                  imageMode === 'image' 
-                    ? 'bg-white text-cyan-500 shadow-sm' 
-                    : 'text-gray-400 hover:text-gray-600'
+                className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  imageMode === 'image' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
-                <ImagePlus size={16} />
-                图片
+                <ImagePlus size={14} /> 图片
               </button>
             </div>
           </div>
           
           {imageMode === 'icon' ? (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {WISH_ICON_KEYS.map((key) => {
                 const config = WISH_ICONS[key];
                 const IconComponent = config.icon;
@@ -440,20 +594,21 @@ const EditWishView = ({
                   <button
                     key={key}
                     onClick={() => setSelectedIcon(key)}
-                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-2 transition-all p-3 border-2 ${isSelected ? 'bg-cyan-50 border-cyan-400 ring-2 ring-cyan-400 ring-offset-2' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}
+                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all p-2 ${
+                      isSelected 
+                        ? 'bg-cyan-50 border-2 border-cyan-400 text-cyan-600' 
+                        : 'bg-gray-50 border-2 border-transparent text-gray-300 hover:bg-gray-100'
+                    }`}
                   >
-                    <div className="w-10 h-10">
-                      <IconComponent className="w-full h-full" />
+                    <div className="w-8 h-8">
+                      <IconComponent className="w-full h-full" strokeWidth={isSelected ? 2 : 1.5} />
                     </div>
-                    <span className={`text-xs font-bold ${isSelected ? 'text-cyan-600' : 'text-gray-400'}`}>
-                      {config.label}
-                    </span>
                   </button>
                 );
               })}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -463,51 +618,43 @@ const EditWishView = ({
               />
               
               {imagePreview ? (
-                <div className="relative">
-                  <div className="aspect-square rounded-2xl overflow-hidden bg-gray-100">
-                    <img 
-                      src={imagePreview} 
-                      alt="预览" 
-                      className="w-full h-full object-cover"
-                    />
+                <div className="relative group">
+                  <div className="aspect-video w-full rounded-2xl overflow-hidden bg-gray-100 shadow-sm border-2 border-gray-100">
+                    <img src={imagePreview} alt="预览" className="w-full h-full object-cover" />
                   </div>
-                  <button
-                    onClick={handleRemoveImage}
-                    className="absolute top-3 right-3 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg active:scale-95"
-                  >
-                    <X size={20} strokeWidth={3} />
-                  </button>
+                  <div className="absolute bottom-3 right-3 flex gap-2">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="w-10 h-10 bg-white/90 backdrop-blur text-gray-600 rounded-full flex items-center justify-center shadow-lg active:scale-95"
+                    >
+                      <Camera size={20} />
+                    </button>
+                    <button
+                      onClick={handleRemoveImage}
+                      className="w-10 h-10 bg-white/90 backdrop-blur text-red-500 rounded-full flex items-center justify-center shadow-lg active:scale-95"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                   {isUploading && (
                     <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-white border-t-transparent"></div>
                     </div>
                   )}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="mt-3 w-full py-3 bg-gray-100 rounded-xl text-gray-500 font-bold text-sm hover:bg-gray-200 active:scale-[0.98] transition-all disabled:opacity-50"
-                  >
-                    重新选择图片
-                  </button>
                 </div>
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
-                  className="w-full aspect-square rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-3 hover:border-cyan-400 hover:bg-cyan-50 transition-all active:scale-[0.98] disabled:opacity-50"
+                  className="w-full aspect-[2/1] rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-3 hover:border-cyan-300 hover:bg-cyan-50/50 transition-all active:scale-[0.99] disabled:opacity-50 text-gray-400 hover:text-cyan-500"
                 >
                   {isUploading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-10 w-10 border-4 border-cyan-200 border-t-cyan-500"></div>
-                      <span className="text-gray-400 font-bold">上传中...</span>
-                    </>
+                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-current border-t-transparent"></div>
                   ) : (
                     <>
-                      <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
-                        <ImagePlus size={32} className="text-gray-400" />
-                      </div>
-                      <span className="text-gray-400 font-bold">点击上传图片</span>
-                      <span className="text-gray-300 text-sm">支持 JPG、PNG，最大 5MB</span>
+                      <ImagePlus size={32} strokeWidth={1.5} />
+                      <span className="font-bold text-sm">上传心愿图片</span>
                     </>
                   )}
                 </button>
@@ -516,28 +663,28 @@ const EditWishView = ({
           )}
         </div>
         
-        <div className="pb-6">
+        <div className="pt-4 pb-10">
           <DuoButton 
             onClick={handleSave} 
             disabled={!description || !amount || isLoading || isUploading} 
             fullWidth
             size="lg"
+            className="shadow-xl shadow-cyan-500/20"
           >
-            {isLoading ? '保存中...' : '保存'}
+            {isLoading ? '保存中...' : '保存心愿'}
           </DuoButton>
         </div>
       </ContentArea>
       
       {showCalculator && (
-        <Calculator
-          value={amount}
-          onChange={handleAmountChange}
-          onClose={() => setShowCalculator(false)}
-          title="输入金额"
-          showNote={false}
+        <Calculator 
+          value={amount} 
+          onChange={handleAmountChange} 
+          onClose={() => setShowCalculator(false)} 
+          title="输入金额" 
+          showNote={false} 
         />
       )}
-      
       <LoadingOverlay isLoading={isLoading} />
     </PageContainer>
   );

@@ -1,9 +1,21 @@
 // SpecialBudgetTimelineView.jsx - 独立预算时间轴视图
-// 修改：移除弹窗介绍，底部简单说明，每年下方显示总额
+// 重构：Design System 适配 (电脑端居中)，保留时间轴核心逻辑
+// 风格：专项预算使用 Indigo/Purple 色系
 
-import React, { useRef } from 'react';
-import { ArrowLeft, Plus, ChevronRight, Calendar } from 'lucide-react';
+import React from 'react';
+import { Plus, ChevronRight, Calendar, Target, Sparkles } from 'lucide-react';
 import { getFloatingIcon } from '../constants/floatingIcons';
+
+// 导入设计系统组件
+import { 
+  PageContainer, 
+  TransparentNavBar, 
+  ContentArea,
+  EmptyState,
+  DuoButton
+} from '../components/design-system';
+
+// ============ 辅助函数 (保持原逻辑) ============
 
 // 判断专项预算状态和年份
 const getBudgetYearAndStatus = (budget) => {
@@ -57,11 +69,13 @@ const formatDateRange = (startDate, endDate) => {
   return '长期';
 };
 
-// 时间轴项目组件
+// ============ 子组件 ============
+
+// 时间轴项目组件 (适配 Design System 风格)
 const TimelineItem = ({ budget, items, onClick, isLast }) => {
   const iconConfig = getFloatingIcon(budget.icon);
   const IconComponent = iconConfig.icon;
-  const iconColor = iconConfig.color;
+  const iconColor = iconConfig.color; // 这里可能需要强制转为 Purple 色系，或者保持原色
   const { status } = getBudgetYearAndStatus(budget);
   
   const totalBudget = (items || []).reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
@@ -72,108 +86,140 @@ const TimelineItem = ({ budget, items, onClick, isLast }) => {
   
   return (
     <div className="flex gap-4">
-      {/* 时间轴线和节点 */}
+      {/* 左侧：时间轴线和节点 */}
       <div className="flex flex-col items-center">
         <div 
-          className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            isHistory ? 'bg-gray-200' : isUpcoming ? 'bg-cyan-100' : 'bg-cyan-500'
+          className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 z-10 transition-colors ${
+            isHistory 
+              ? 'bg-gray-100' 
+              : isUpcoming 
+                ? 'bg-indigo-50 border-2 border-indigo-100' 
+                : 'bg-indigo-500 shadow-md shadow-indigo-200'
           }`}
         >
-          <div className="w-6 h-6" style={{ opacity: isHistory ? 0.5 : 1 }}>
-            <IconComponent className="w-full h-full" style={{ color: isHistory ? '#9CA3AF' : (isUpcoming ? iconColor : 'white') }} />
-          </div>
+          {/* 图标 */}
+          <IconComponent 
+            size={20} 
+            className={isHistory ? 'text-gray-300' : isUpcoming ? 'text-indigo-300' : 'text-white'} 
+            strokeWidth={isHistory ? 2 : 2.5}
+          />
         </div>
+        
+        {/* 连接线 */}
         {!isLast && (
-          <div className={`w-0.5 flex-1 min-h-[20px] ${isHistory ? 'bg-gray-200' : 'bg-cyan-200'}`} />
+          <div className={`w-[2px] flex-1 my-1 rounded-full ${isHistory ? 'bg-gray-100' : 'bg-indigo-100'}`} />
         )}
       </div>
       
-      {/* 内容卡片 */}
+      {/* 右侧：内容卡片 */}
       <div 
         onClick={onClick}
-        className={`flex-1 mb-4 p-4 rounded-2xl cursor-pointer active:scale-[0.99] transition-all ${
+        className={`flex-1 mb-6 p-5 rounded-[20px] cursor-pointer active:scale-[0.98] transition-all relative overflow-hidden ${
           isHistory 
-            ? 'bg-gray-100 opacity-70' 
+            ? 'bg-[#F9F9F9]' // 历史项目灰底
             : isUpcoming
-            ? 'bg-cyan-50 border-2 border-dashed border-cyan-200'
-            : 'bg-white shadow-sm'
+              ? 'bg-white border-2 border-dashed border-indigo-100' // 即将开始
+              : 'bg-white shadow-sm border border-indigo-50/50' // 进行中
         }`}
       >
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-3 relative z-10">
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className={`font-bold ${isHistory ? 'text-gray-500' : 'text-gray-800'}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className={`font-bold text-lg ${isHistory ? 'text-gray-400' : 'text-gray-800'}`}>
                 {budget.name}
               </h3>
+              
+              {/* 状态标签 */}
               {isHistory && (
-                <span className="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">已结束</span>
+                <span className="text-[10px] font-bold bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full border border-gray-200">
+                  已结束
+                </span>
               )}
               {isUpcoming && (
-                <span className="text-xs bg-cyan-200 text-cyan-600 px-1.5 py-0.5 rounded">即将开始</span>
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full border border-indigo-100">
+                  即将开始
+                </span>
               )}
             </div>
-            <p className={`text-xs mt-1 ${isHistory ? 'text-gray-400' : 'text-gray-400'}`}>
+            
+            <p className={`text-xs font-medium mt-1 ${isHistory ? 'text-gray-300' : 'text-gray-400'}`}>
               {formatDateRange(budget.startDate, budget.endDate)}
             </p>
           </div>
-          <ChevronRight size={18} className={isHistory ? 'text-gray-300' : 'text-gray-300'} />
+          
+          <ChevronRight size={20} className={isHistory ? 'text-gray-200' : 'text-gray-300'} />
         </div>
         
-        <div className="flex items-baseline gap-2">
-          <span className={`text-xl font-extrabold font-rounded ${isHistory ? 'text-gray-500' : 'text-gray-800'}`}>
-            ¥{totalBudget.toLocaleString()}
-          </span>
-          {totalActual > 0 && (
-            <span className={`text-sm ${totalActual > totalBudget ? 'text-red-500' : 'text-gray-400'}`}>
-              已花 ¥{totalActual.toLocaleString()}
+        {/* 金额信息 */}
+        <div className="flex items-baseline gap-3 relative z-10">
+          <div className="flex items-baseline gap-0.5">
+            <span className={`text-xs font-bold ${isHistory ? 'text-gray-300' : 'text-gray-400'}`}>预算</span>
+            <span className={`text-xl font-black font-rounded ${isHistory ? 'text-gray-400' : 'text-gray-800'}`}>
+              ¥{totalBudget.toLocaleString()}
             </span>
+          </div>
+          
+          {totalActual > 0 && (
+            <div className="flex items-baseline gap-0.5">
+              <span className={`text-xs font-bold ${isHistory ? 'text-gray-300' : 'text-gray-400'}`}>已花</span>
+              <span className={`text-sm font-bold ${
+                isHistory 
+                  ? 'text-gray-400' 
+                  : totalActual > totalBudget ? 'text-red-500' : 'text-gray-500'
+              }`}>
+                ¥{totalActual.toLocaleString()}
+              </span>
+            </div>
           )}
         </div>
+
+        {/* 进度条 (仅进行中显示) */}
+        {!isHistory && !isUpcoming && totalBudget > 0 && (
+          <div className="mt-3 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full ${totalActual > totalBudget ? 'bg-red-400' : 'bg-indigo-400'}`} 
+              style={{ width: `${Math.min((totalActual / totalBudget) * 100, 100)}%` }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-// 年份分隔组件（含总额）
+// 年份分隔组件 (保持设计系统风格)
 const YearDivider = ({ year, isCurrentYear, totalBudget, totalActual }) => (
-  <div className="my-4">
-    <div className="flex items-center gap-3 mb-2">
-      <div className={`px-3 py-1 rounded-full text-sm font-bold ${
-        isCurrentYear ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-500'
+  <div className="mb-6 mt-2 pl-14"> {/* pl-14 是为了对齐时间轴右侧 */}
+    <div className="flex items-center justify-between">
+      <div className={`px-3 py-1 rounded-lg text-xs font-black tracking-wider ${
+        isCurrentYear ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'
       }`}>
-        {year}年
+        {year}
       </div>
-      <div className="flex-1 h-px bg-gray-200" />
-    </div>
-    
-    {/* 年度总额 */}
-    <div className="flex items-center gap-4 ml-1 text-sm">
-      <span className="text-gray-400">
-        预算 <span className="font-bold text-gray-600">¥{totalBudget.toLocaleString()}</span>
-      </span>
-      {totalActual > 0 && (
-        <span className="text-gray-400">
-          实际 <span className={`font-bold ${totalActual > totalBudget ? 'text-red-500' : 'text-gray-600'}`}>
-            ¥{totalActual.toLocaleString()}
-          </span>
-        </span>
-      )}
+      
+      <div className="text-xs font-bold text-gray-300">
+        年度预算 ¥{totalBudget.toLocaleString()}
+      </div>
     </div>
   </div>
 );
 
-// 使用说明组件
+// 使用说明组件 (底部)
 const UsageGuide = () => (
-  <div className="bg-cyan-50 rounded-2xl p-4 mt-6 mb-4">
-    <h4 className="text-cyan-700 font-bold text-sm mb-2">💡 如何使用独立预算</h4>
-    <div className="text-cyan-600 text-xs space-y-1.5 leading-relaxed">
-      <p><span className="font-medium">1.</span> 为旅行、大件购物、节日等创建专属预算</p>
-      <p><span className="font-medium">2.</span> 添加预算明细，如机票、住宿、礼物等</p>
-      <p><span className="font-medium">3.</span> 记录实际消费，对比预算执行情况</p>
-      <p><span className="font-medium">4.</span> 可置顶到首页，快速记录消费</p>
+  <div className="bg-indigo-50/50 border border-indigo-100 rounded-[20px] p-5 mt-4 mb-20 mx-14">
+    <div className="flex items-center gap-2 mb-3">
+      <Sparkles size={16} className="text-indigo-400" fill="currentColor" />
+      <h4 className="text-indigo-900 font-bold text-sm">独立预算使用指南</h4>
+    </div>
+    <div className="text-indigo-800/60 text-xs space-y-2 leading-relaxed font-medium">
+      <p>1. 适合 <span className="text-indigo-600 font-bold">旅行、装修、大件购物</span> 等非常规支出。</p>
+      <p>2. 不占用每月的固定或日常预算额度。</p>
+      <p>3. 可以设置起止时间，方便后续复盘。</p>
     </div>
   </div>
 );
+
+// ============ 主组件 ============
 
 const SpecialBudgetTimelineView = ({
   specialBudgets = [],
@@ -181,11 +227,10 @@ const SpecialBudgetTimelineView = ({
   specialBudgetItems = {},
   navigateTo,
   onBack,
-  isDataReady
+  isDataReady = true
 }) => {
-  const scrollRef = useRef(null);
   
-  // 按年份分组预算，并计算每年总额
+  // 数据处理逻辑 (保持不变)
   const groupedBudgets = React.useMemo(() => {
     const groups = {};
     const currentYear = new Date().getFullYear();
@@ -205,16 +250,12 @@ const SpecialBudgetTimelineView = ({
       groups[year].totalActual += actualTotal;
     });
     
-    // 按年份排序（从新到旧）
+    // 排序逻辑
     const sortedYears = Object.keys(groups).sort((a, b) => b - a);
-    
-    // 对每年内的预算按状态和日期排序
     sortedYears.forEach(year => {
       groups[year].budgets.sort((a, b) => {
         const statusOrder = { ongoing: 0, upcoming: 1, history: 2 };
-        if (statusOrder[a.status] !== statusOrder[b.status]) {
-          return statusOrder[a.status] - statusOrder[b.status];
-        }
+        if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
         const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
         const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
         return dateB - dateA;
@@ -223,65 +264,53 @@ const SpecialBudgetTimelineView = ({
     
     return { groups, sortedYears, currentYear };
   }, [specialBudgets, specialBudgetItems]);
-  
-  if (!isDataReady) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-  
+
+  // 导航栏配置
+  const rightButtons = [
+    {
+      icon: Plus,
+      onClick: () => navigateTo('editSpecialBudget', { editingSpecialBudget: {} }),
+      variant: 'primary' // Indigo 色系
+    }
+  ];
+
+  if (!isDataReady) return <PageContainer><div className="pt-20 text-center text-gray-400">加载中...</div></PageContainer>;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-        .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
-      `}</style>
+    <PageContainer>
+      {/* 1. 导航栏 */}
+      <TransparentNavBar 
+        onBack={onBack} 
+        rightButtons={rightButtons}
+      />
       
-      {/* 顶部导航 */}
-      <div className="sticky top-0 z-20 bg-gray-50/95 backdrop-blur-sm">
-        <div className="px-6 pt-4 pb-3">
-          <div className="flex items-center justify-between">
-            <button 
-              onClick={onBack}
-              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
-            >
-              <ArrowLeft size={24} strokeWidth={2.5} />
-            </button>
-            
-            <h1 className="text-lg font-bold text-gray-800">独立预算</h1>
-            
-            <div className="w-12" />
-          </div>
-        </div>
+      {/* 2. 标题区域 (增加 pt-24 防止遮挡) */}
+      <div className="px-[30px] pt-24 pb-6">
+        <h1 className="text-2xl font-black text-gray-800">独立预算</h1>
+        <p className="text-gray-400 font-bold text-sm mt-1">
+          专款专用的时间轴
+        </p>
       </div>
-      
-      {/* 内容区域 */}
-      <div ref={scrollRef} className="px-6 pb-24">
+
+      <ContentArea className="pt-0 pb-32"> {/* 底部留白给悬浮按钮 */}
+        
         {specialBudgets.length === 0 ? (
-          /* 空状态 */
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="w-20 h-20 bg-cyan-100 rounded-2xl flex items-center justify-center mb-4">
-              <Calendar size={40} className="text-cyan-500" />
-            </div>
-            <h2 className="text-lg font-bold text-gray-700 mb-2">还没有独立预算</h2>
-            <p className="text-gray-400 text-sm text-center mb-6">
-              为旅行、大件购物等特殊支出<br/>创建专属预算
-            </p>
-            <button
-              onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
-              className="px-6 py-3 bg-cyan-500 text-white font-bold rounded-xl flex items-center gap-2 active:scale-95 transition-all shadow-lg shadow-cyan-500/30"
-            >
-              <Plus size={20} />
-              创建独立预算
-            </button>
-            
-            {/* 使用说明 */}
-            <UsageGuide />
-          </div>
+          <EmptyState 
+            icon={Target}
+            message="还没有独立预算"
+            action={
+              <div className="mt-4">
+                <DuoButton 
+                  onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
+                  variant="primary" // Indigo/Cyan
+                  icon={Plus}
+                >
+                  创建第一个
+                </DuoButton>
+              </div>
+            }
+          />
         ) : (
-          /* 时间轴 */
           <>
             {groupedBudgets.sortedYears.map((year) => {
               const isCurrentYear = parseInt(year) === groupedBudgets.currentYear;
@@ -289,6 +318,7 @@ const SpecialBudgetTimelineView = ({
               
               return (
                 <div key={year}>
+                  {/* 年份分隔 */}
                   <YearDivider 
                     year={year} 
                     isCurrentYear={isCurrentYear}
@@ -296,7 +326,8 @@ const SpecialBudgetTimelineView = ({
                     totalActual={yearData.totalActual}
                   />
                   
-                  <div className="ml-1">
+                  {/* 预算列表 */}
+                  <div>
                     {yearData.budgets.map((budget, index) => (
                       <TimelineItem
                         key={budget.id}
@@ -311,25 +342,13 @@ const SpecialBudgetTimelineView = ({
               );
             })}
             
-            {/* 底部使用说明 */}
+            {/* 底部说明 */}
             <UsageGuide />
           </>
         )}
-      </div>
-      
-      {/* 底部添加按钮 */}
-      {specialBudgets.length > 0 && (
-        <div className="fixed bottom-6 left-0 right-0 flex justify-center z-10">
-          <button
-            onClick={() => navigateTo('editSpecialBudget', { editingSpecialBudget: {} })}
-            className="px-6 py-3 bg-cyan-500 text-white font-bold rounded-full flex items-center gap-2 active:scale-95 transition-all shadow-lg shadow-cyan-500/30"
-          >
-            <Plus size={20} />
-            新建独立预算
-          </button>
-        </div>
-      )}
-    </div>
+      </ContentArea>
+
+    </PageContainer>
   );
 };
 

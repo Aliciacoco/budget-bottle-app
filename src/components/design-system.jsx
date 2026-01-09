@@ -1,16 +1,26 @@
 // src/components/design-system.jsx - 精简版设计系统组件
 // 更新：白色背景页面 + 灰色列表 + 面状图标 + 大圆角
-// v2: padding 30px + 极简返回箭头
+// v3: 电脑端居中显示，最大宽度480px，修复导航栏位置
 
 import React, { useRef, useEffect } from 'react';
 
 // ==================== 颜色常量 ====================
+// ==================== 颜色常量 ====================
 export const colors = {
-  primary: '#00BFDC',
-  primaryDark: '#0891B2',
-  success: '#22C55E',
-  danger: '#EF4444',
-  warning: '#F59E0B',
+  // 核心色 (对应“这一周”)
+  primary: '#00BFDC',      // Cyan-500: 主色调，用于日常消费、按钮
+  primaryDark: '#0891B2',  // Cyan-700: 点击态深色
+
+  // 状态色
+  success: '#22C55E',      // Green-500: 成功、余额充足
+  danger: '#EF4444',       // Red-500: 删除、赤字
+  warning: '#F59E0B',      // Amber-500: 警告、撤销
+
+  // 👇👇👇 新增业务品牌色 👇👇👇
+  yellow: '#FFC800',       // 对应“每个月” (固定支出) - 明亮的黄色
+  purple: '#CE82FF',       // 对应“这件事” (独立预算) - 柔和的紫色
+  
+  // 灰色系 (保持不变)
   gray: {
     50: '#F9FAFB',
     100: '#F9F9F9',
@@ -25,29 +35,30 @@ export const colors = {
 };
 
 // ==================== 极简返回箭头图标 ====================
+// 修改：加粗线条(3px)，使用 currentColor 继承颜色，调整路径为更饱满的箭头
 const MinimalArrowLeft = ({ size = 24 }) => (
   <svg 
     width={size} 
     height={size} 
     viewBox="0 0 24 24" 
     fill="none" 
-    stroke="#9CA3AF"
-    strokeWidth="2.5"
-    strokeLinecap="round"
+    stroke="currentColor" 
+    strokeWidth="3" 
+    strokeLinecap="round" 
     strokeLinejoin="round"
   >
-    <path d="M15 18l-6-6 6-6" />
+    <path d="M15 19l-7-7 7-7" />
   </svg>
 );
 
 // ==================== 页面容器 ====================
 // 默认白色背景，二级页面统一使用白色
-// padding 统一使用 30px
+// 电脑端内容居中，最大宽度 480px
 export const PageContainer = ({ children, bg = 'white', className = '' }) => {
   const bgClass = bg === 'gray' ? 'bg-gray-50' : 'bg-white';
   
   return (
-    <div className={`min-h-screen ${bgClass} overflow-x-hidden ${className}`}>
+    <div className={`min-h-screen bg-gray-100 overflow-x-hidden ${className}`}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded {
@@ -68,54 +79,97 @@ export const PageContainer = ({ children, bg = 'white', className = '' }) => {
           text-align: left;
         }
       `}</style>
-      {children}
+      {/* 内容区域：最大宽度 480px，居中显示 */}
+      <div className={`min-h-screen ${bgClass} max-w-[480px] mx-auto relative shadow-sm`}>
+        {children}
+      </div>
     </div>
   );
 };
 
 // ==================== 透明导航栏 ====================
+// 修复：导航栏内容也需要限制最大宽度并居中
+// src/components/design-system.jsx
+
+// ... 保持 PageContainer 和 MinimalArrowLeft 不变 ...
+
+// ==================== 透明导航栏 ====================
+// 更新：支持 variant 属性切换按钮样式
+// variant = 'default' | 'white'
 export const TransparentNavBar = ({ 
   onBack, 
   rightButtons = [],
-  className = ''
+  className = '',
+  variant = 'default' // 👈 新增这个属性，默认为灰色样式
 }) => {
-  const getButtonStyle = (variant) => {
-    switch (variant) {
-      case 'danger':
-        return 'text-red-400 hover:text-red-500';
-      case 'primary':
-        return 'text-cyan-500 hover:text-cyan-600';
-      default:
-        return 'text-gray-400 hover:text-gray-600';
+  
+  // 1. 定义返回按钮的样式配置
+  const backButtonStyles = {
+    default: {
+      // 原来的样式：灰底、灰箭头、悬停变深
+      base: "bg-gray-100 text-gray-400",
+      hover: "desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200", // 电脑悬停
+      active: "active:bg-white/30 active:bg-gray-300", // 手机按压
+    },
+    white: {
+      // 新样式：透明底、白箭头
+      base: "bg-white/30 text-white",
+      hover: "desktop-hover:hover:bg-white/10", // 电脑悬停：微微的白色半透明
+      active: "active:text-gray-300", // 
+    }
+  };
+
+  // 2. 获取当前样式的类名字符串
+  const currentStyle = backButtonStyles[variant] || backButtonStyles.default;
+  const btnClassName = `w-12 h-12 rounded-2xl flex items-center justify-center pointer-events-auto active:scale-95 transition-all duration-200 ${currentStyle.base} ${currentStyle.hover} ${currentStyle.active}`;
+
+  // 3. 右侧按钮样式生成器 (根据 variant 自动适配)
+  const getRightButtonStyle = (btnVariant) => {
+    // 如果导航栏是 white 模式，且按钮没有指定特定颜色，则默认也是白色透明风格
+    if (variant === 'white' && !btnVariant) {
+      return `bg-transparent text-white desktop-hover:hover:bg-white/10 active:bg-white/20`;
+    }
+
+    // 否则使用标准的彩色/灰色逻辑
+    switch (btnVariant) {
+      case 'danger': return 'bg-red-50 text-red-500 desktop-hover:hover:bg-red-100 active:bg-red-200';
+      case 'primary': return 'bg-cyan-50 text-cyan-500 desktop-hover:hover:bg-cyan-100 active:bg-cyan-200';
+      case 'white': return 'bg-transparent text-white desktop-hover:hover:bg-white/10 active:bg-white/20'; // 强制指定白色
+      default: return 'bg-gray-100 text-gray-400 desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200 active:bg-gray-300';
     }
   };
 
   return (
-    <div className={`fixed top-0 left-0 right-0 z-20 px-[30px] pt-4 pb-2 pointer-events-none ${className}`}>
-      <div className="flex items-center justify-between max-w-lg mx-auto">
-        <button 
-          onClick={onBack || (() => window.history.back())}
-          className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95 transition-all"
-        >
-          <MinimalArrowLeft size={22} />
-        </button>
-        
-        {rightButtons.length > 0 && (
-          <div className="flex gap-2 pointer-events-auto">
-            {rightButtons.map((btn, index) => {
-              const IconComp = btn.icon;
-              return (
-                <button 
-                  key={index}
-                  onClick={btn.onClick}
-                  className={`w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center active:scale-95 transition-all ${getButtonStyle(btn.variant)}`}
-                >
-                  <IconComp size={22} strokeWidth={2.5} />
-                </button>
-              );
-            })}
-          </div>
-        )}
+    <div className={`fixed top-0 left-0 right-0 z-20 pointer-events-none ${className}`}>
+      <div className="max-w-[480px] mx-auto px-[30px] pt-4 pb-2">
+        <div className="flex items-center justify-between">
+          
+          {/* 左侧：返回按钮 */}
+          <button 
+            onClick={onBack || (() => window.history.back())}
+            className={btnClassName} // 👈 使用上面生成的类名
+          >
+            <MinimalArrowLeft size={22} />
+          </button>
+          
+          {/* 右侧：功能按钮组 */}
+          {rightButtons.length > 0 && (
+            <div className="flex gap-2 pointer-events-auto">
+              {rightButtons.map((btn, index) => {
+                const IconComp = btn.icon;
+                return (
+                  <button 
+                    key={index}
+                    onClick={btn.onClick}
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-all duration-200 ${getRightButtonStyle(btn.variant)}`}
+                  >
+                    <IconComp size={22} strokeWidth={2.5} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

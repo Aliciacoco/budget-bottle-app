@@ -1,8 +1,19 @@
 // FixedExpenseListView.jsx - 固定支出列表页面
-// 修改：删除底部说明文字
+// 修复：1. 增加顶部 padding 解决标题被遮挡问题 2. 移除列表项图标
 
-import React, { useState } from 'react';
-import { ArrowLeft, Plus, ChevronRight, Calendar } from 'lucide-react';
+import React from 'react';
+import { Plus, Calendar } from 'lucide-react';
+
+// 导入设计系统组件
+import { 
+  PageContainer, 
+  TransparentNavBar, 
+  ContentArea,
+  ListItem,
+  ListGroup,
+  EmptyState,
+  DuoButton
+} from '../components/design-system';
 
 const FixedExpenseListView = ({ 
   fixedExpenses = [],
@@ -11,100 +22,88 @@ const FixedExpenseListView = ({
 }) => {
   const enabledExpenses = fixedExpenses.filter(e => e.enabled !== false);
   const totalAmount = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
-  
+
+  // 导航栏右侧按钮：添加
+  const rightButtons = [
+    {
+      icon: Plus,
+      onClick: () => navigateTo('editFixedExpense', { editingExpense: {} }),
+      variant: 'primary'
+    }
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
-        .font-chinese { 
-          font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-        }
-      `}</style>
+    <PageContainer>
+      {/* 1. 导航栏 (Fixed 定位) */}
+      <TransparentNavBar 
+        onBack={onBack} 
+        rightButtons={rightButtons} 
+      />
       
-      {/* 导航栏 */}
-      <div className="bg-white border-b-2 border-gray-200 px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between">
-          <button 
-            onClick={onBack}
-            className="w-12 h-12 bg-white border-2 border-gray-200 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-600 active:scale-95 transition-all"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-          <h1 className="text-xl font-black text-gray-700 font-chinese">每个月</h1>
-          <button 
-            onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
-            className="w-12 h-12 bg-amber-500 border-b-4 border-amber-600 rounded-2xl flex items-center justify-center text-white active:border-b-0 active:translate-y-1 transition-all"
-          >
-            <Plus size={24} strokeWidth={2.5} />
-          </button>
-        </div>
+      {/* 2. 标题区域 */}
+      {/* 👇 修改点 1：将 pt-2 改为 pt-24 (96px)，给固定导航栏留出空间 */}
+      <div className="px-[30px] pt-24 pb-6">
+        <h1 className="text-2xl font-black text-gray-800">每个月</h1>
+        <p className="text-gray-400 font-bold text-sm mt-1">管理你的固定支出</p>
       </div>
       
-      <div className="px-4 pt-6">
-        {/* 汇总卡片 - 多邻国风格 */}
-        <div className="bg-amber-500 rounded-2xl border-b-4 border-amber-600 p-5 mb-6">
-          <p className="text-white/70 text-sm font-bold mb-1 font-chinese">每月固定支出</p>
+      <ContentArea className="pt-0">
+        
+        {/* 3. 汇总卡片 */}
+        <div className="bg-amber-500 rounded-[24px] border-b-[6px] border-amber-600 p-6 mb-8 text-white shadow-sm relative overflow-hidden">
+          <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full blur-xl"></div>
+          <p className="text-amber-100 font-bold mb-1">每月固定支出</p>
           <div className="flex items-baseline gap-1">
-            <span className="text-white/60 text-2xl font-bold">¥</span>
-            <span className="text-white text-4xl font-black">
+            <span className="text-amber-200 text-2xl font-bold">¥</span>
+            <span className="text-white text-5xl font-black tracking-tight">
               {totalAmount.toLocaleString()}
             </span>
           </div>
-          <p className="text-white/50 text-xs mt-2 font-chinese">
-            {enabledExpenses.length} 个项目
-          </p>
+          <div className="mt-4 inline-flex items-center bg-black/10 rounded-lg px-3 py-1 text-sm font-bold text-amber-50">
+             {enabledExpenses.length} 个项目
+          </div>
         </div>
         
-        {/* 支出列表 */}
+        {/* 4. 支出列表 */}
         {enabledExpenses.length > 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-gray-200 border-b-4 overflow-hidden">
-            {enabledExpenses.map((expense, index) => (
-              <div 
+          <ListGroup>
+            {enabledExpenses.map((expense) => (
+              <ListItem
                 key={expense.id}
+                title={expense.name}
+                subtitle={expense.expireDate ? `到期: ${expense.expireDate}` : '长期有效'}
+                // 👇 修改点 2：删除了 icon={Calendar} 和 iconColor="..."
                 onClick={() => navigateTo('editFixedExpense', { editingExpense: expense })}
-                className={`p-4 flex items-center justify-between cursor-pointer active:bg-gray-50 transition-all ${
-                  index !== enabledExpenses.length - 1 ? 'border-b-2 border-gray-100' : ''
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                    <Calendar size={20} className="text-amber-500" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-gray-700 font-chinese">{expense.name}</p>
-                    {expense.expireDate && (
-                      <p className="text-gray-400 text-xs mt-0.5 font-chinese">
-                        到期：{expense.expireDate}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-amber-600 font-bold">¥{expense.amount.toLocaleString()}</span>
-                  <ChevronRight size={20} className="text-gray-300" />
-                </div>
-              </div>
+                rightElement={
+                  <span className="font-black text-gray-700 text-lg">
+                    ¥{expense.amount.toLocaleString()}
+                  </span>
+                }
+              />
             ))}
-          </div>
+          </ListGroup>
         ) : (
-          <div className="bg-white rounded-2xl border-2 border-gray-200 border-b-4 p-8 text-center">
-            <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Calendar size={32} className="text-amber-400" />
-            </div>
-            <p className="text-gray-700 font-bold mb-1 font-chinese">还没有固定支出</p>
-            <p className="text-gray-400 text-sm mb-4 font-chinese">
-              添加房租、订阅等每月必付项目
-            </p>
-            <button
-              onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
-              className="px-6 py-3 bg-amber-500 border-b-4 border-amber-600 text-white font-bold rounded-xl active:border-b-0 active:translate-y-1 transition-all"
-            >
-              添加第一个
-            </button>
-          </div>
+          <EmptyState 
+            icon={Calendar}
+            message="还没有固定支出"
+            action={
+              <div className="mt-2">
+                <p className="text-sm text-gray-400 mb-6 max-w-[200px] mx-auto leading-relaxed">
+                  添加房租、订阅会员、宽带费等<br/>每月必付的项目
+                </p>
+                <DuoButton 
+                  onClick={() => navigateTo('editFixedExpense', { editingExpense: {} })}
+                  variant="warning"
+                  icon={Plus}
+                >
+                  添加第一个
+                </DuoButton>
+              </div>
+            }
+          />
         )}
-      </div>
-    </div>
+      </ContentArea>
+    </PageContainer>
   );
 };
 
