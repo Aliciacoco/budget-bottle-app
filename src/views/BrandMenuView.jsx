@@ -312,7 +312,8 @@ const BrandMenuView = ({
             {getGreeting()}，{isAnonymous ? '朋友' : (currentUser?.username || '用户')}
           </h1>
           <p className="text-gray-400 text-sm leading-relaxed">
-            CloudPool是一个周预算工具，掌控这朵云，就是掌控这一周的生活。
+            想对你说：<br />
+            月初大手大脚、月中控制不了，月底做假账，你有没有类似的经历？不要怪自己，这些都是真实的人性，因为传统的月度预算系统满足不了我们的真实需求。<br></br>控制到每周，是对自己的小小承诺；把心愿写下来，想要的迫切感就会消失一半；要做的大事，给它预算，好好做完；这就是这个产品的设计目的。<br></br>希望你能在这里找到充满掌控力的自己。
           </p>
         </div>
         

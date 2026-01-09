@@ -1,13 +1,12 @@
 // src/components/design-system.jsx - 精简版设计系统组件
-// 更新：白色背景页面 + 灰色列表 + 面状图标 + 大圆角
+// 更新：添加 warning variant 支持黄色主题
 // v3: 电脑端居中显示，最大宽度480px，修复导航栏位置
 
 import React, { useRef, useEffect } from 'react';
 
 // ==================== 颜色常量 ====================
-// ==================== 颜色常量 ====================
 export const colors = {
-  // 核心色 (对应“这一周”)
+  // 核心色 (对应"这一周")
   primary: '#00BFDC',      // Cyan-500: 主色调，用于日常消费、按钮
   primaryDark: '#0891B2',  // Cyan-700: 点击态深色
 
@@ -16,11 +15,11 @@ export const colors = {
   danger: '#EF4444',       // Red-500: 删除、赤字
   warning: '#F59E0B',      // Amber-500: 警告、撤销
 
-  // 👇👇👇 新增业务品牌色 👇👇👇
-  yellow: '#FFC800',       // 对应“每个月” (固定支出) - 明亮的黄色
-  purple: '#CE82FF',       // 对应“这件事” (独立预算) - 柔和的紫色
+  // 业务品牌色
+  yellow: '#FFC234',       // 对应"每个月" (固定支出) - 明亮的黄色
+  purple: '#CE82FF',       // 对应"这件事" (独立预算) - 柔和的紫色
   
-  // 灰色系 (保持不变)
+  // 灰色系
   gray: {
     50: '#F9FAFB',
     100: '#F9F9F9',
@@ -35,7 +34,6 @@ export const colors = {
 };
 
 // ==================== 极简返回箭头图标 ====================
-// 修改：加粗线条(3px)，使用 currentColor 继承颜色，调整路径为更饱满的箭头
 const MinimalArrowLeft = ({ size = 24 }) => (
   <svg 
     width={size} 
@@ -52,8 +50,6 @@ const MinimalArrowLeft = ({ size = 24 }) => (
 );
 
 // ==================== 页面容器 ====================
-// 默认白色背景，二级页面统一使用白色
-// 电脑端内容居中，最大宽度 480px
 export const PageContainer = ({ children, bg = 'white', className = '' }) => {
   const bgClass = bg === 'gray' ? 'bg-gray-50' : 'bg-white';
   
@@ -79,7 +75,6 @@ export const PageContainer = ({ children, bg = 'white', className = '' }) => {
           text-align: left;
         }
       `}</style>
-      {/* 内容区域：最大宽度 480px，居中显示 */}
       <div className={`min-h-screen ${bgClass} max-w-[480px] mx-auto relative shadow-sm`}>
         {children}
       </div>
@@ -88,54 +83,50 @@ export const PageContainer = ({ children, bg = 'white', className = '' }) => {
 };
 
 // ==================== 透明导航栏 ====================
-// 修复：导航栏内容也需要限制最大宽度并居中
-// src/components/design-system.jsx
-
-// ... 保持 PageContainer 和 MinimalArrowLeft 不变 ...
-
-// ==================== 透明导航栏 ====================
-// 更新：支持 variant 属性切换按钮样式
-// variant = 'default' | 'white'
 export const TransparentNavBar = ({ 
   onBack, 
   rightButtons = [],
   className = '',
-  variant = 'default' // 👈 新增这个属性，默认为灰色样式
+  variant = 'default'
 }) => {
   
-  // 1. 定义返回按钮的样式配置
   const backButtonStyles = {
     default: {
-      // 原来的样式：灰底、灰箭头、悬停变深
       base: "bg-gray-100 text-gray-400",
-      hover: "desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200", // 电脑悬停
-      active: "active:bg-white/30 active:bg-gray-300", // 手机按压
+      hover: "desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200",
+      active: "active:bg-white/30 active:bg-gray-300",
     },
     white: {
-      // 新样式：透明底、白箭头
       base: "bg-white/30 text-white",
-      hover: "desktop-hover:hover:bg-white/10", // 电脑悬停：微微的白色半透明
-      active: "active:text-gray-300", // 
+      hover: "desktop-hover:hover:bg-white/10",
+      active: "active:text-gray-300",
     }
   };
 
-  // 2. 获取当前样式的类名字符串
   const currentStyle = backButtonStyles[variant] || backButtonStyles.default;
   const btnClassName = `w-12 h-12 rounded-2xl flex items-center justify-center pointer-events-auto active:scale-95 transition-all duration-200 ${currentStyle.base} ${currentStyle.hover} ${currentStyle.active}`;
 
-  // 3. 右侧按钮样式生成器 (根据 variant 自动适配)
+  // 右侧按钮样式生成器 - 添加 warning variant
   const getRightButtonStyle = (btnVariant) => {
-    // 如果导航栏是 white 模式，且按钮没有指定特定颜色，则默认也是白色透明风格
     if (variant === 'white' && !btnVariant) {
       return `bg-transparent text-white desktop-hover:hover:bg-white/10 active:bg-white/20`;
     }
 
-    // 否则使用标准的彩色/灰色逻辑
     switch (btnVariant) {
-      case 'danger': return 'bg-red-50 text-red-500 desktop-hover:hover:bg-red-100 active:bg-red-200';
-      case 'primary': return 'bg-cyan-50 text-cyan-500 desktop-hover:hover:bg-cyan-100 active:bg-cyan-200';
-      case 'white': return 'bg-transparent text-white desktop-hover:hover:bg-white/10 active:bg-white/20'; // 强制指定白色
-      default: return 'bg-gray-100 text-gray-400 desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200 active:bg-gray-300';
+      case 'danger': 
+        return 'bg-red-50 text-red-500 desktop-hover:hover:bg-red-100 active:bg-red-200';
+      case 'primary': 
+        return 'bg-cyan-50 text-cyan-500 desktop-hover:hover:bg-cyan-100 active:bg-cyan-200';
+      case 'warning': 
+        // 新增：黄色主题按钮样式（带背景色）
+        return 'bg-[#FFF4D6] text-[#FFC234] desktop-hover:hover:bg-[#FFECBE] active:bg-[#FFE4A6]';
+      case 'purple':
+        // 紫色主题按钮样式（带背景色）
+        return 'bg-[#F5E6FF] text-[#CE82FF] desktop-hover:hover:bg-[#EDD9FF] active:bg-[#E5CCFF]';
+      case 'white': 
+        return 'bg-transparent text-white desktop-hover:hover:bg-white/10 active:bg-white/20';
+      default: 
+        return 'bg-gray-100 text-gray-400 desktop-hover:hover:text-gray-600 desktop-hover:hover:bg-gray-200 active:bg-gray-300';
     }
   };
 
@@ -147,7 +138,7 @@ export const TransparentNavBar = ({
           {/* 左侧：返回按钮 */}
           <button 
             onClick={onBack || (() => window.history.back())}
-            className={btnClassName} // 👈 使用上面生成的类名
+            className={btnClassName}
           >
             <MinimalArrowLeft size={22} />
           </button>
@@ -193,7 +184,8 @@ export const DuoButton = ({
     secondary: 'bg-gray-100 text-gray-600 border-b-4 border-gray-200 active:border-b-2 active:translate-y-[2px] hover:bg-gray-50',
     danger: 'bg-red-500 text-white border-b-4 border-red-600 active:border-b-0 active:translate-y-1 hover:bg-red-400',
     success: 'bg-green-500 text-white border-b-4 border-green-600 active:border-b-0 active:translate-y-1 hover:bg-green-400',
-    warning: 'bg-amber-500 text-white border-b-4 border-amber-600 active:border-b-0 active:translate-y-1 hover:bg-amber-400',
+    warning: 'bg-[#FFC234] text-white border-b-4 border-[#E6AD2E] active:border-b-0 active:translate-y-1 hover:bg-[#FFD060]',
+    purple: 'bg-[#CE82FF] text-white border-b-4 border-[#B86EE6] active:border-b-0 active:translate-y-1 hover:bg-[#D99AFF]',
     ghost: 'bg-transparent text-gray-500 hover:bg-gray-100',
   };
   
@@ -230,6 +222,8 @@ export const IconButton = ({
     default: 'bg-gray-100 text-gray-400 hover:text-gray-600',
     primary: 'bg-cyan-100 text-cyan-500 hover:bg-cyan-200',
     danger: 'bg-red-100 text-red-500 hover:bg-red-200',
+    warning: 'bg-[#FFF4D6] text-[#FFC234] hover:bg-[#FFECBE]',
+    purple: 'bg-[#F5E6FF] text-[#CE82FF] hover:bg-[#EDD9FF]',
   };
 
   const sizeStyles = {
@@ -255,7 +249,6 @@ export const IconButton = ({
 };
 
 // ==================== 列表项组件 ====================
-// 用于白色背景页面的灰色列表项，大圆角，面状图标无背景
 export const ListItem = ({ 
   icon: Icon,
   iconColor = 'text-gray-400',
@@ -263,13 +256,10 @@ export const ListItem = ({
   subtitle,
   onClick, 
   rightElement,
-  height = 70,  // 默认高度 70px
+  height = 70,
   bgColor = 'bg-[#F9F9F9]', 
   className = '' 
 }) => {
-  // 当指定高度时，使用 h-[Xpx] 类名
-  const heightClass = height ? `h-[${height}px]` : '';
-  // 当指定高度时不用 py-4，改用 items-center 自动垂直居中
   const paddingClass = height ? 'px-5' : 'px-5 py-4';
   
   return (
@@ -295,7 +285,6 @@ export const ListItem = ({
 };
 
 // ==================== 列表容器 ====================
-// 包裹多个 ListItem，统一间距
 export const ListGroup = ({ children, className = '' }) => (
   <div className={`space-y-3 ${className}`}>
     {children}
@@ -442,7 +431,8 @@ export const ConfirmModal = ({
     danger: 'bg-red-500 border-red-600 hover:bg-red-400',
     primary: 'bg-cyan-500 border-cyan-600 hover:bg-cyan-400',
     success: 'bg-green-500 border-green-600 hover:bg-green-400',
-    warning: 'bg-amber-500 border-amber-600 hover:bg-amber-400',
+    warning: 'bg-[#FFC234] border-[#E6AD2E] hover:bg-[#FFD060]',
+    purple: 'bg-[#CE82FF] border-[#B86EE6] hover:bg-[#D99AFF]',
   };
   
   return (
@@ -543,7 +533,6 @@ export const LoadingOverlay = ({ isLoading }) => {
 };
 
 // ==================== 内容区域 ====================
-// padding 统一使用 30px
 export const ContentArea = ({ children, className = '' }) => {
   return (
     <div className={`px-[30px] py-6 ${className}`}>
@@ -553,7 +542,6 @@ export const ContentArea = ({ children, className = '' }) => {
 };
 
 // ==================== 卡片 ====================
-// 白色背景页面中使用灰色卡片
 export const Card = ({ children, className = '', onClick, variant = 'gray' }) => {
   const clickableClass = onClick ? 'cursor-pointer active:scale-[0.99] transition-transform' : '';
   const bgClass = variant === 'white' ? 'bg-white shadow-sm' : 'bg-[#F9F9F9]';

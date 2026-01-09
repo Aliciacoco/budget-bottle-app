@@ -62,7 +62,7 @@ const GameCard = ({
         <div className="mt-1 mb-3">
           <div className="flex items-baseline gap-1.5">
              {valuePrefix && <span className="text-xl font-black opacity-80" style={{ color: valueColor }}>{valuePrefix}</span>}
-             <span className="text-4xl font-black font-rounded tracking-tighter" style={{ color: valueColor }}>
+             <span className="text-3xl font-black font-rounded " style={{ color: valueColor }}>
                {typeof value === 'number' ? value.toLocaleString() : value}
              </span>
           </div>
@@ -105,23 +105,6 @@ const GameCard = ({
       </>
     )}
 
-    {/* 进度条 */}
-    {progress !== null && layout === 'row' && (
-      <div className="w-full mt-auto pt-2">
-        <div className="flex justify-between text-xs font-bold text-gray-400 mb-1.5 px-1">
-          <span>已用 {Math.round(progress)}%</span>
-          <span>目标: 不超支</span>
-        </div>
-        <div className="h-4 bg-gray-100 rounded-full overflow-hidden p-0.5">
-          <div 
-            className="h-full rounded-full transition-all duration-1000 relative"
-            style={{ width: `${Math.max(progress, 2)}%`, backgroundColor: valueColor }} 
-          >
-             <div className="absolute top-0.5 left-2 right-2 h-0.5 bg-white/40 rounded-full"></div>
-          </div>
-        </div>
-      </div>
-    )}
   </button>
 );
 
@@ -191,16 +174,13 @@ const ArticleModal = ({ article, isOpen, onClose }) => {
         <div className="sticky top-0 bg-white pt-3 pb-2 flex justify-center rounded-t-[32px]">
           <div className="w-12 h-1.5 bg-gray-200 rounded-full" />
         </div>
-        <div className="px-8 pb-10">
-          <div className="w-16 h-16 bg-cyan-50 rounded-2xl flex items-center justify-center mb-6 text-cyan-500 mx-auto">
-            <IconComponent size={32} strokeWidth={2.5} />
-          </div>
+        <div className="pt-8 px-8 pb-10">
           <h2 className="text-2xl font-black text-gray-800 mb-2 text-center">{article.title}</h2>
           <p className="text-gray-400 text-sm font-bold mb-8 text-center">{article.subtitle}</p>
           <div className="text-gray-600 text-base leading-relaxed whitespace-pre-line font-medium bg-gray-50 p-6 rounded-2xl">
               {article.content}
           </div>
-          <button onClick={onClose} className="w-full mt-8 py-4 bg-[#00C2E0] text-white rounded-2xl font-black text-lg shadow-lg shadow-cyan-200 active:scale-95 transition-all">
+          <button onClick={onClose} className="w-full mt-8 py-4 bg-[#00C2E0] text-white rounded-2xl font-black text-lg  shadow-cyan-200 active:scale-95 transition-all">
               我明白了
           </button>
         </div>
@@ -253,7 +233,6 @@ const SpendingOverviewView = ({
               value={displayRemaining}
               valueColor={colors.primary} 
               icon={Cloud}
-              progress={progressPercent}
               layout="row"
               onClick={() => navigateTo('transactionList')}
             />
