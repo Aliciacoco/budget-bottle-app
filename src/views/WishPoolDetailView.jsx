@@ -1,10 +1,11 @@
 // WishPoolDetailView.jsx - 心愿池详情页
 // 视觉更新：纯白页面背景 + 浅灰卡片 (Flat Style)
+// 修复：周数显示改为 ISO 周号（第1~52周）
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Check, History, Droplets, Sparkles, Waves } from 'lucide-react';
 import { getWishPoolHistory, getWishPool } from '../api';
-import { parseWeekKey } from '../utils/helpers';
+import { parseWeekKeyToISO } from '../utils/helpers';
 import { getWishIcon } from '../constants/wishIcons.jsx';
 
 // 导入设计系统组件
@@ -244,7 +245,7 @@ const WishPoolDetailView = ({
         </div>
       </div>
 
-      {/* 历史记录弹窗 (保持不变) */}
+      {/* 历史记录弹窗 */}
       <Modal 
         isOpen={showHistoryModal} 
         onClose={() => setShowHistoryModal(false)}
@@ -273,8 +274,13 @@ const WishPoolDetailView = ({
                   {item.isDeduction ? <Sparkles size={18} /> : <Droplets size={18} />}
                 </div>
                 <div>
-                  <div className="font-bold text-gray-700">{item.isDeduction ? (item.wishName || '心愿兑换') : parseWeekKey(item.weekKey)}</div>
-                  <div className="text-xs text-gray-400 font-medium">{new Date(item.settledAt || item.createdAt).toLocaleDateString()}</div>
+                  {/* 修改：使用 parseWeekKeyToISO 显示 ISO 周号 */}
+                  <div className="font-bold text-gray-700">
+                    {item.isDeduction ? (item.wishName || '心愿兑换') : parseWeekKeyToISO(item.weekKey)}
+                  </div>
+                  <div className="text-xs text-gray-400 font-medium">
+                    {new Date(item.settledAt || item.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
               <div className={`font-extrabold text-lg font-rounded ${item.isDeduction || item.savedAmount < 0 ? 'text-orange-500' : 'text-cyan-500'}`}>

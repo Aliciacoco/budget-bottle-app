@@ -1,5 +1,6 @@
 // SpecialBudgetTimelineView.jsx - 独立预算列表页面
 // 更新：按年份分组、移除大卡片、修复图标显示
+// 更新：图标底色使用各自的 bgColor
 
 import React from 'react';
 import { Plus, Target, ChevronRight, Plane } from 'lucide-react';
@@ -17,7 +18,6 @@ import {
 
 // 主题色常量
 const THEME_COLOR = '#CE82FF';
-const THEME_COLOR_LIGHT = '#F5E6FF';
 
 // ============ 辅助函数 ============
 
@@ -103,10 +103,17 @@ const YearDivider = ({ year, isCurrentYear, totalBudget, totalActual }) => (
 // 预算列表项
 const BudgetItem = ({ budget, items, onClick, status }) => {
   // 获取图标配置，提供默认值
-  const iconConfig = getFloatingIcon(budget.icon) || { icon: Plane, color: THEME_COLOR };
+  const iconConfig = getFloatingIcon(budget.icon) || { 
+    icon: Plane, 
+    color: THEME_COLOR,
+    bgColor: '#F5E6FF'  // 默认浅紫色
+  };
   const IconComponent = iconConfig.icon || Plane;
   const statusLabel = getStatusLabel(status);
   const isHistory = status === 'history';
+  
+  // 使用图标自己的 bgColor，如果没有则用默认浅紫色
+  const iconBgColor = iconConfig.bgColor || '#F5E6FF';
   
   const totalBudget = (items || []).reduce((sum, item) => sum + (item.budgetAmount || 0), 0);
   const totalActual = (items || []).reduce((sum, item) => sum + (item.actualAmount || 0), 0);
@@ -118,14 +125,14 @@ const BudgetItem = ({ budget, items, onClick, status }) => {
         isHistory ? 'opacity-60' : ''
       }`}
     >
-      {/* 图标 - 48x48 容器，图标 24px，有足够 padding */}
+      {/* 图标 - 48x48 容器，图标 24px，使用各自的 bgColor */}
       <div 
         className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: isHistory ? '#F3F4F6' : THEME_COLOR_LIGHT }}
+        style={{ backgroundColor: isHistory ? '#F3F4F6' : iconBgColor }}
       >
         <IconComponent 
           size={24} 
-          style={{ color: isHistory ? '#9CA3AF' : THEME_COLOR }}
+          style={{ color: isHistory ? '#9CA3AF' : iconConfig.color }}
           strokeWidth={1.5}
         />
       </div>

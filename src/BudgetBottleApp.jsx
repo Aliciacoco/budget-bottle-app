@@ -1,6 +1,7 @@
 // BudgetBottleApp.jsx - 主应用文件
 // 修改：电脑端内容居中，最大宽度480px，两侧灰色背景
 // 修复：SpendingOverviewView 传递 transactions 数据
+// 修复：心愿池标题和金额层级最高，不被心愿球遮挡
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronRight } from 'lucide-react';
@@ -527,6 +528,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
                 </button>
               </div>
               
+              {/* 可拖拽的独立预算图标 - z-index 设为 15，低于心愿池 */}
               {pinnedBudgets.length > 0 && (
                 <DraggableBudgetIcons
                   budgets={pinnedBudgets}
@@ -575,10 +577,11 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
                 </div>
               </div>
               
+              {/* 心愿池 - z-index 提高到 30，确保标题和金额不被遮挡 */}
               <div ref={poolRef} style={{ 
                 transform: 'translateY(-50px)', 
                 position: 'relative', 
-                zIndex: 20 
+                zIndex: 30 
               }}>
                 <WishPoolBar 
                   poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 

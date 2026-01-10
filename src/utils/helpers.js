@@ -150,10 +150,47 @@ export const getPreviousWeekInfo = (currentWeekInfo) => {
   return getWeekInfo(prevWeekStart);
 };
 
+/**
+ * 解析 weekKey 为按月份显示格式（旧版，保留兼容）
+ * 例: "2024-01-W1" => "2024年1月 第1周"
+ */
 export const parseWeekKey = (weekKey) => {
   const match = weekKey.match(/(\d{4})-(\d{2})-W(\d+)/);
   if (match) {
     return `${match[1]}年${parseInt(match[2])}月 第${match[3]}周`;
   }
   return weekKey;
+};
+
+/**
+ * 解析 weekKey 为 ISO 周号显示格式（新版，用于心愿池等）
+ * 例: "2024-01-W1" => "2024年 第1周"
+ * 
+ * 原理：从 weekKey 反推出该周的周一日期，再计算 ISO 周号
+ */
+export const parseWeekKeyToISO = (weekKey) => {
+  const match = weekKey.match(/(\d{4})-(\d{2})-W(\d+)/);
+  if (!match) return weekKey;
+  
+  const year = parseInt(match[1]);
+  const month = parseInt(match[2]) - 1; // JS月份从0开始
+  const weekOfMonth = parseInt(match[3]);
+  
+  // 反推周一的日期
+  // 找到该月第一天
+  const firstDayOfMonth = new Date(year, month, 1);
+  const firstDayWeekday = firstDayOfMonth.getDay() || 7; // 周一=1, 周日=7
+  
+  // 计算该月第 weekOfMonth 周的周一日期
+  // 第1周的周一偏移量（相对于1号）
+  const firstMondayOffset = 1 - (firstDayWeekday - 1);
+  const targetMondayDay = firstMondayOffset + (weekOfMonth - 1) * 7;
+  
+  // 创建周一日期（可能跨月）
+  const weekMonday = new Date(year, month, targetMondayDay);
+  
+  // 获取 ISO 周号
+  const isoWeek = getISOWeekNumber(weekMonday);
+  
+  return `${isoWeek.year}年 第${isoWeek.weekNumber}周`;
 };
