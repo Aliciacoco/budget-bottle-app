@@ -2,9 +2,10 @@
 // 修改：电脑端内容居中，最大宽度480px，两侧灰色背景
 // 修复：SpendingOverviewView 传递 transactions 数据
 // 修复：心愿池标题和金额层级最高，不被心愿球遮挡
+// 修改：结算前先询问用户是否存入心愿池
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Droplets, X } from 'lucide-react';
 
 // 组件导入
 import BudgetCloud, { CLOUD_COLOR } from './components/BudgetCloud';
@@ -42,19 +43,107 @@ import {
   getWishes,
   getSpecialBudgets,
   getSpecialBudgetItems,
-  getFixedExpenses
+  getFixedExpenses,
+  checkWeekSettled,
+  createWishPoolHistory
 } from './api';
 import { 
   loadFromCache, 
   saveToCache, 
   getWeekInfo, 
-  formatDate 
+  formatDate,
+  parseWeekKeyToISO
 } from './utils/helpers';
 
 // 设计系统颜色
 const colors = {
   primary: '#06B6D4',
   primaryDark: '#0891B2',
+};
+
+// ===== 结算确认弹窗组件 =====
+const SettlementConfirmModal = ({ 
+  isOpen, 
+  weekLabel, 
+  savedAmount, 
+  onConfirm, 
+  onSkip 
+}) => {
+  if (!isOpen) return null;
+  
+  const isPositive = savedAmount > 0;
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-6">
+      <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+        {/* 顶部图标 */}
+        <div className="pt-8 pb-4 flex justify-center">
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
+            isPositive ? 'bg-cyan-100' : 'bg-gray-100'
+          }`}>
+            <Droplets size={40} className={isPositive ? 'text-cyan-500' : 'text-gray-400'} />
+          </div>
+        </div>
+        
+        {/* 内容 */}
+        <div className="px-6 pb-6 text-center">
+          <h2 className="text-xl font-bold text-gray-800 mb-2">
+            {weekLabel} 结算
+          </h2>
+          
+          {isPositive ? (
+            <>
+              <p className="text-gray-500 mb-4">
+                上周你节省了
+              </p>
+              <p className="text-4xl font-extrabold text-cyan-500 mb-4" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
+                ¥{savedAmount.toLocaleString()}
+              </p>
+              <p className="text-gray-500 text-sm">
+                是否存入心愿池？
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-500 mb-4">
+                上周预算已用完
+              </p>
+              <p className="text-2xl font-bold text-gray-400 mb-4">
+                没有余额可存入
+              </p>
+            </>
+          )}
+        </div>
+        
+        {/* 按钮 */}
+        <div className="px-6 pb-8 space-y-3">
+          {isPositive ? (
+            <>
+              <button
+                onClick={onConfirm}
+                className="w-full py-4 bg-cyan-500 text-white font-bold rounded-2xl active:scale-[0.98] transition-transform"
+              >
+                存入心愿池
+              </button>
+              <button
+                onClick={onSkip}
+                className="w-full py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl active:scale-[0.98] transition-transform"
+              >
+                暂不存入
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onSkip}
+              className="w-full py-4 bg-gray-100 text-gray-600 font-bold rounded-2xl active:scale-[0.98] transition-transform"
+            >
+              知道了
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ===== 结算倒计时 Hook =====
@@ -107,6 +196,14 @@ const useSettlementCountdown = (weekInfo) => {
   return { ...timeLeft, formattedTime };
 };
 
+// ===== 获取上周的周信息 =====
+const getPreviousWeekInfo = (currentWeekInfo) => {
+  const currentWeekStart = currentWeekInfo.weekStart;
+  const previousWeekDate = new Date(currentWeekStart);
+  previousWeekDate.setDate(previousWeekDate.getDate() - 1);
+  return getWeekInfo(previousWeekDate);
+};
+
 // ===== 主组件 =====
 const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 基础状态 =====
@@ -145,11 +242,19 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   
   // ===== 动画状态 =====
   const [showCelebration, setShowCelebration] = useState(false);
-  const [settlementPhase, setSettlementPhase] = useState('idle');
+  const [settlementPhase, setSettlementPhase] = useState('idle'); // idle | raining | result
   const [drainProgress, setDrainProgress] = useState(0);
   const [poolFillAmount, setPoolFillAmount] = useState(0);
   const [showResultModal, setShowResultModal] = useState(false);
   const [settlementData, setSettlementData] = useState({ saved: 0, isEmpty: false });
+  
+  // ===== 结算确认弹窗状态 =====
+  const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
+  const [pendingSettlementData, setPendingSettlementData] = useState(null);
+  const [isTestMode, setIsTestMode] = useState(false); // 测试模式标志
+  
+  // ===== 待结算队列（支持多周结算动画） =====
+  const [pendingSettlements, setPendingSettlements] = useState([]);
   
   // ===== 调试模式 =====
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -201,6 +306,158 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     window.history.pushState({ view, params }, '', `#${view}`);
   };
   
+  // ===== 播放结算动画 =====
+  const playSettlementAnimation = useCallback((savedAmount, isEmpty) => {
+    return new Promise((resolve) => {
+      // 1. 开始下雨动画
+      setSettlementPhase('raining');
+      setSettlementData({ saved: savedAmount, isEmpty });
+      
+      // 2. 金额渐变动画（2.5秒内从0增加到savedAmount）
+      if (savedAmount > 0) {
+        const startTime = Date.now();
+        const duration = 2500;
+        const startAmount = 0;
+        
+        const animateAmount = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          // 使用 easeOutCubic 缓动函数
+          const easeProgress = 1 - Math.pow(1 - progress, 3);
+          const currentAmount = startAmount + (savedAmount * easeProgress);
+          setPoolFillAmount(currentAmount);
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateAmount);
+          }
+        };
+        requestAnimationFrame(animateAmount);
+      }
+      
+      // 3. 下雨持续 2.5 秒后显示结果
+      setTimeout(() => {
+        setSettlementPhase('result');
+        setShowResultModal(true);
+        resolve();
+      }, 2500);
+    });
+  }, []);
+  
+  // ===== 处理结算队列 =====
+  useEffect(() => {
+    if (pendingSettlements.length > 0 && settlementPhase === 'idle' && !isInitialLoading) {
+      const nextSettlement = pendingSettlements[0];
+      
+      // 播放动画
+      playSettlementAnimation(nextSettlement.saved, nextSettlement.isEmpty);
+      
+      // 从队列中移除
+      setPendingSettlements(prev => prev.slice(1));
+    }
+  }, [pendingSettlements, settlementPhase, isInitialLoading, playSettlementAnimation]);
+  
+  // ===== 检查上周是否需要结算（只检查，不自动结算） =====
+  const checkPreviousWeekSettlement = async (currentWeekInfo) => {
+    try {
+      const prevWeekInfo = getPreviousWeekInfo(currentWeekInfo);
+      const weekKey = prevWeekInfo.weekKey;
+      
+      // 检查该周是否已结算
+      const settledResult = await checkWeekSettled(weekKey);
+      if (settledResult.settled) {
+        console.log(`✅ ${weekKey} 已结算`);
+        return null;
+      }
+      
+      // 获取该周的预算
+      const budgetRes = await getWeeklyBudget(weekKey);
+      if (!budgetRes.success || !budgetRes.data) {
+        console.log(`⏭️ ${weekKey} 没有设置预算，跳过`);
+        return null;
+      }
+      
+      const budget = budgetRes.data.amount;
+      
+      // 获取该周的支出
+      const transRes = await getTransactions(weekKey);
+      const spent = transRes.success 
+        ? transRes.data.reduce((sum, t) => sum + t.amount, 0) 
+        : 0;
+      
+      // 计算节省金额
+      const saved = budget - spent;
+      
+      console.log(`📊 ${weekKey} 待结算: 预算=${budget}, 支出=${spent}, 节省=${saved}`);
+      
+      // 返回待结算数据，让用户确认
+      return {
+        weekKey,
+        weekLabel: parseWeekKeyToISO(weekKey),
+        budget,
+        spent,
+        saved
+      };
+      
+    } catch (error) {
+      console.error('检查上周结算失败:', error);
+      return null;
+    }
+  };
+  
+  // ===== 用户确认存入心愿池 =====
+  const handleConfirmSettlement = async () => {
+    if (!pendingSettlementData) return;
+    
+    const { weekKey, budget, spent, saved } = pendingSettlementData;
+    
+    // 关闭确认弹窗
+    setShowSettlementConfirm(false);
+    
+    // 测试模式：只播放动画，不保存数据
+    if (isTestMode) {
+      setPendingSettlements([{
+        weekKey,
+        saved: Math.max(0, saved),
+        isEmpty: saved <= 0
+      }]);
+      setPendingSettlementData(null);
+      setIsTestMode(false);
+      return;
+    }
+    
+    // 正式模式：创建心愿池历史记录
+    const historyResult = await createWishPoolHistory(
+      weekKey,
+      budget,
+      spent,
+      saved,
+      false,
+      '',
+      ''
+    );
+    
+    if (historyResult.success && historyResult.isNew) {
+      console.log(`✅ ${weekKey} 结算成功`);
+      
+      // 播放动画
+      setPendingSettlements([{
+        weekKey,
+        saved: Math.max(0, saved),
+        isEmpty: saved <= 0
+      }]);
+    }
+    
+    setPendingSettlementData(null);
+  };
+  
+  // ===== 用户跳过存入 =====
+  const handleSkipSettlement = () => {
+    setShowSettlementConfirm(false);
+    setPendingSettlementData(null);
+    setIsTestMode(false); // 重置测试模式
+    // 不做任何记录，用户可以在水位变动记录中手动转入
+  };
+  
   // ===== 加载次要数据 =====
   const loadSecondaryData = async () => {
     if (isSecondaryLoaded) return;
@@ -235,6 +492,10 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   useEffect(() => {
     const loadCoreData = async () => {
       try {
+        // 检查上周是否需要结算（只检查，不自动结算）
+        const settlementData = await checkPreviousWeekSettlement(weekInfo);
+        
+        // 加载本周数据
         const [budgetRes, transRes, poolRes, wishesRes] = await Promise.all([
           getWeeklyBudget(weekInfo.weekKey),
           getTransactions(weekInfo.weekKey),
@@ -259,6 +520,14 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         
         setIsDataReady(true);
         setIsInitialLoading(false);
+        
+        // 如果有待结算数据，显示确认弹窗
+        if (settlementData) {
+          setTimeout(() => {
+            setPendingSettlementData(settlementData);
+            setShowSettlementConfirm(true);
+          }, 500);
+        }
         
         setTimeout(() => loadSecondaryData(), 500);
         
@@ -353,12 +622,22 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     return () => clearInterval(interval);
   }, [isCountdownActive]);
   
-  // ===== 其他处理函数 =====
-  const closeSettlementResult = () => {
+  // ===== 关闭结算结果 =====
+  const closeSettlementResult = async () => {
     setShowResultModal(false);
     setSettlementPhase('idle');
     setDrainProgress(0);
     setPoolFillAmount(0);
+    
+    // 刷新心愿池金额
+    try {
+      const poolRes = await getWishPool();
+      if (poolRes.success) {
+        setWishPoolAmount(poolRes.data.amount);
+      }
+    } catch (error) {
+      console.error('刷新心愿池失败:', error);
+    }
   };
   
   const handleDebugChange = (value) => {
@@ -508,6 +787,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
                 >
                   CloudPool
                 </button>
+                
                 {/* 右上角：消费全景入口 */}
                 <button 
                   onClick={() => navigateTo('spendingOverview')} 
@@ -584,7 +864,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
                 zIndex: 30 
               }}>
                 <WishPoolBar 
-                  poolAmount={isDebugMode ? debugPoolAmount : displayPoolAmount} 
+                  poolAmount={isDebugMode ? debugPoolAmount : (displayPoolAmount + poolFillAmount)} 
                   animatingAmount={poolFillAmount}
                   wishes={wishes} 
                   onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
@@ -597,11 +877,22 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           </div>
         </div>
         
+        {/* 结算确认弹窗 */}
+        <SettlementConfirmModal
+          isOpen={showSettlementConfirm}
+          weekLabel={pendingSettlementData?.weekLabel || ''}
+          savedAmount={pendingSettlementData?.saved || 0}
+          onConfirm={handleConfirmSettlement}
+          onSkip={handleSkipSettlement}
+        />
+        
+        {/* 下雨动画 */}
         <RainEffect 
           isActive={settlementPhase === 'raining'}
           cloudRef={cloudRef}
         />
         
+        {/* 结算结果弹窗 */}
         <SettlementResultModal
           isOpen={showResultModal}
           savedAmount={settlementData.saved}

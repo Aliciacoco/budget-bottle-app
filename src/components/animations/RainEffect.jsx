@@ -1,5 +1,6 @@
 // RainEffect.jsx - 首页下雨效果
 // 水滴形状的雨滴，从云朵底部落到页面底部
+// 修改：z-index 调低，让水滴在心愿球后面
 
 import React, { useEffect, useRef } from 'react';
 
@@ -119,8 +120,12 @@ const RainEffect = ({
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-30"
-      style={{ width: '100%', height: '100%' }}
+      className="fixed inset-0 pointer-events-none"
+      style={{ 
+        width: '100%', 
+        height: '100%',
+        zIndex: 25  // 低于心愿池(30)，让水滴在心愿球后面
+      }}
     />
   );
 };

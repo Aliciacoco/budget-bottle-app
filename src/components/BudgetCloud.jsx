@@ -17,8 +17,9 @@ const BudgetCloud = ({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const currentHRef = useRef(null);
+  const mouthRef = useRef(null);  // 嘴巴 DOM 引用
+  const mouthOffsetRef = useRef({ x: 0, y: 0 });  // 动画偏移值（不触发重渲染）
   const [isPressed, setIsPressed] = useState(false);
-  const [mouthOffset, setMouthOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   
   // SVG原始尺寸
@@ -39,7 +40,7 @@ const BudgetCloud = ({
     setScale(displayW / svgW);
   }, []);
 
-  // 嘴巴漂浮动画
+  // 嘴巴漂浮动画 - 使用 ref + DOM 操作避免无限渲染
   useEffect(() => {
     let animationId;
     let startTime = Date.now();
@@ -48,13 +49,36 @@ const BudgetCloud = ({
       const elapsed = Date.now() - startTime;
       const x = Math.sin(elapsed * 0.002) * 3 + Math.sin(elapsed * 0.0015) * 2;
       const y = Math.sin(elapsed * 0.0025) * 2 + Math.cos(elapsed * 0.002) * 1.5;
-      setMouthOffset({ x, y });
+      
+      // 存储到 ref（不触发重渲染）
+      mouthOffsetRef.current = { x, y };
+      
+      // 直接操作 DOM 更新嘴巴位置
+      if (mouthRef.current) {
+        const currentWidth = parseFloat(mouthRef.current.getAttribute('width')) || 40;
+        const mouthX = 150 - currentWidth / 2 + x;
+        const mouthY = 177 + y;
+        mouthRef.current.setAttribute('x', mouthX);
+        mouthRef.current.setAttribute('y', mouthY);
+      }
+      
       animationId = requestAnimationFrame(animate);
     };
     
     animate();
     return () => cancelAnimationFrame(animationId);
   }, []);
+
+  // 当 isPressed 变化时更新嘴巴宽度
+  useEffect(() => {
+    if (mouthRef.current) {
+      const mouthWidth = isPressed ? 52 : 40;
+      const { x } = mouthOffsetRef.current;
+      const mouthX = 150 - mouthWidth / 2 + x;
+      mouthRef.current.setAttribute('width', mouthWidth);
+      mouthRef.current.setAttribute('x', mouthX);
+    }
+  }, [isPressed]);
 
   // 水波动画
   useEffect(() => {
@@ -195,11 +219,11 @@ const BudgetCloud = ({
     if (onClick) onClick(e);
   };
 
-  // 嘴巴尺寸和位置
-  const mouthWidth = isPressed ? 52 : 40;
+  // 嘴巴初始尺寸和位置
+  const mouthWidth = 40;
   const mouthHeight = 14;
-  const mouthX = 150 - mouthWidth / 2 + mouthOffset.x;
-  const mouthY = 177 + mouthOffset.y;
+  const mouthX = 150 - mouthWidth / 2;
+  const mouthY = 177;
 
   return (
     <div 
@@ -273,6 +297,7 @@ const BudgetCloud = ({
           </filter>
         </defs>
         <rect 
+          ref={mouthRef}
           x={mouthX}
           y={mouthY}
           width={mouthWidth}
@@ -281,7 +306,7 @@ const BudgetCloud = ({
           fill="white"
           filter="url(#mouthShadow)"
           style={{
-            transition: 'width 0.15s ease-out, x 0.15s ease-out'
+            transition: 'width 0.15s ease-out'
           }}
         />
       </svg>
