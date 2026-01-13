@@ -1,18 +1,19 @@
 // auth.js - 账号认证模块
 // 支持匿名用户 + 正式账号
+// 更新：移除昵称，只使用用户名和密码
 
 // ==================== 正式账号配置 ====================
 export const TEST_ACCOUNTS = [
-  { username: 'test01', password: 'cloud2026', nickname: 'Coco' },
-  { username: 'test02', password: 'cloud2026', nickname: '波哥' },
-  { username: 'test03', password: 'cloud2026', nickname: '测试用户3' },
-  { username: 'test04', password: 'cloud2026', nickname: '测试用户4' },
-  { username: 'test05', password: 'cloud2026', nickname: '测试用户5' },
-  { username: 'test06', password: 'cloud2026', nickname: '测试用户6' },
-  { username: 'test07', password: 'cloud2026', nickname: '测试用户7' },
-  { username: 'test08', password: 'cloud2026', nickname: '测试用户8' },
-  { username: 'test09', password: 'cloud2026', nickname: '测试用户9' },
-  { username: 'test10', password: 'cloud2026', nickname: '测试用户10' },
+  { username: 'test01', password: 'cloud2026' },
+  { username: 'test02', password: 'cloud2026' },
+  { username: 'test03', password: 'cloud2026' },
+  { username: 'test04', password: 'cloud2026' },
+  { username: 'test05', password: 'cloud2026' },
+  { username: 'test06', password: 'cloud2026' },
+  { username: 'test07', password: 'cloud2026' },
+  { username: 'test08', password: 'cloud2026' },
+  { username: 'test09', password: 'cloud2026' },
+  { username: 'test10', password: 'cloud2026' },
 ];
 
 // ==================== 本地存储 Key ====================
@@ -46,7 +47,6 @@ export const createAnonymousSession = () => {
   
   const user = {
     username: anonymousId,
-    nickname: '新朋友',  // 修改：更友好的昵称
     isAnonymous: true,
     loginTime: Date.now()
   };
@@ -73,7 +73,6 @@ export const login = (username, password) => {
   
   const user = {
     username: account.username,
-    nickname: account.nickname,
     isAnonymous: false,
     loginTime: Date.now()
   };

@@ -17,10 +17,12 @@ const BudgetCloud = ({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const currentHRef = useRef(null);
-  const mouthRef = useRef(null);  // 嘴巴 DOM 引用
-  const mouthOffsetRef = useRef({ x: 0, y: 0 });  // 动画偏移值（不触发重渲染）
+  const mouthRef = useRef(null);
+  const mouthOffsetRef = useRef({ x: 0, y: 0 });
   const [isPressed, setIsPressed] = useState(false);
   const [scale, setScale] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   
   // SVG原始尺寸
   const svgW = 300;
@@ -40,7 +42,7 @@ const BudgetCloud = ({
     setScale(displayW / svgW);
   }, []);
 
-  // 嘴巴漂浮动画 - 使用 ref + DOM 操作避免无限渲染
+  // 嘴巴漂浮动画
   useEffect(() => {
     let animationId;
     let startTime = Date.now();
@@ -50,10 +52,8 @@ const BudgetCloud = ({
       const x = Math.sin(elapsed * 0.002) * 3 + Math.sin(elapsed * 0.0015) * 2;
       const y = Math.sin(elapsed * 0.0025) * 2 + Math.cos(elapsed * 0.002) * 1.5;
       
-      // 存储到 ref（不触发重渲染）
       mouthOffsetRef.current = { x, y };
       
-      // 直接操作 DOM 更新嘴巴位置
       if (mouthRef.current) {
         const currentWidth = parseFloat(mouthRef.current.getAttribute('width')) || 40;
         const mouthX = 150 - currentWidth / 2 + x;
@@ -84,8 +84,16 @@ const BudgetCloud = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    
     const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setLoadError('Canvas 2D context unavailable');
+      setIsLoading(false);
+      return;
+    }
+    
     let animationFrameId;
+    let isMounted = true;
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = displayW * dpr;
@@ -100,9 +108,11 @@ const BudgetCloud = ({
       currentHRef.current = percentage;
     }
 
-    // 云朵内部的水位范围（缩放后）
-    const C_TOP = 80 * scale;
-    const C_BOT = 220 * scale;
+    // 【修复1】调整云朵内部的水位范围
+    // 云朵实际可视范围约为 Y: 33 ~ 228（根据 cloudPath）
+    // 但考虑云朵形状，有效填充区域调整为：
+    const C_TOP = 45 * scale;   // 上移顶部边界，让水位能更高
+    const C_BOT = 220 * scale;  // 底部保持不变
 
     const B_SETTINGS = [
       { x: 60 * scale,  y: 200 * scale, maxR: 5 * scale, delay: 80 },
@@ -125,18 +135,33 @@ const BudgetCloud = ({
     stroke-linecap="round" 
     stroke-opacity="0.6"/>
     </svg>`;
+    
     const bubbleImg = new Image();
-    bubbleImg.src = bubbleSVG;
+    
+    // 【修复2】添加超时和错误处理
+    const loadTimeout = setTimeout(() => {
+      if (isMounted && isLoading) {
+        console.warn('BudgetCloud: Bubble image load timeout, starting render anyway');
+        setIsLoading(false);
+        render();
+      }
+    }, 2000);
 
     const render = () => {
+      if (!isMounted) return;
+      
       ctx.clearRect(0, 0, displayW, displayH);
       
       currentHRef.current += (percentage - currentHRef.current) * 0.08;
 
       const phase = (performance.now() * speed * 0.001) * 25;
 
-      const fillRange = C_BOT - C_TOP - amplitude * 2;
-      const waterLevel = C_BOT - amplitude - (fillRange * (currentHRef.current / 100));
+      // 【修复1】重新计算水位，让100%时水位达到云朵95%高度
+      // fillRange 是水位可变动的总范围
+      const fillRange = C_BOT - C_TOP;
+      // 当 percentage=100 时，waterLevel 应该接近 C_TOP
+      // 当 percentage=0 时，waterLevel 应该在 C_BOT 以下（不可见）
+      const waterLevel = C_BOT - (fillRange * (currentHRef.current / 100));
 
       ctx.beginPath();
       ctx.fillStyle = liquidColor;
@@ -152,7 +177,7 @@ const BudgetCloud = ({
       ctx.fill();
 
       // 气泡
-      if (currentHRef.current > 5) {
+      if (currentHRef.current > 5 && bubbleImg.complete) {
         bubbles.forEach(b => {
           if (b.status === 'waiting') {
             b.waitCounter++;
@@ -202,13 +227,42 @@ const BudgetCloud = ({
       animationFrameId = requestAnimationFrame(render);
     };
 
-    bubbleImg.onload = () => render();
-    if (bubbleImg.complete) render();
+    bubbleImg.onload = () => {
+      clearTimeout(loadTimeout);
+      if (isMounted) {
+        setIsLoading(false);
+        setLoadError(null);
+        render();
+      }
+    };
     
-    return () => cancelAnimationFrame(animationFrameId);
+    bubbleImg.onerror = (e) => {
+      clearTimeout(loadTimeout);
+      console.error('BudgetCloud: Failed to load bubble image', e);
+      if (isMounted) {
+        setIsLoading(false);
+        // 即使气泡图片加载失败，也继续渲染水波
+        render();
+      }
+    };
+    
+    bubbleImg.src = bubbleSVG;
+    
+    // 如果图片已经缓存，直接渲染
+    if (bubbleImg.complete) {
+      clearTimeout(loadTimeout);
+      setIsLoading(false);
+      render();
+    }
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(loadTimeout);
+      cancelAnimationFrame(animationFrameId);
+    };
   }, [percentage, liquidColor, scale, displayW, displayH]);
 
-  // 云朵路径（缩放后用于CSS clip-path）
+  // 云朵路径
   const scaledCloudPath = `path('M${141.872 * scale} ${33 * scale}C${167.933 * scale} ${33.0001 * scale} ${190.742 * scale} ${46.6446 * scale} ${203.696 * scale} ${67.1777 * scale}C${206.236 * scale} ${71.2314 * scale} ${210.326 * scale} ${73.9341 * scale} ${214.924 * scale} ${74.6494 * scale}C${251.805 * scale} ${80.4783 * scale} ${280 * scale} ${112.298 * scale} ${280 * scale} ${150.821 * scale}C${280 * scale} ${193.451 * scale} ${247.233 * scale} ${228.001 * scale} ${206.872 * scale} ${228.001 * scale}H${85 * scale}C${48.728 * scale} ${226.014 * scale} ${20 * scale} ${197.611 * scale} ${20 * scale} ${163.009 * scale}C${20.0001 * scale} ${136.673 * scale} ${36.6628 * scale} ${113.994 * scale} ${60.6152 * scale} ${103.794 * scale}C${65.6191 * scale} ${101.674 * scale} ${69.2007 * scale} ${97.0373 * scale} ${70.3184 * scale} ${91.5264 * scale}C${77.0749 * scale} ${58.1431 * scale} ${106.515 * scale} ${33 * scale} ${141.872 * scale} ${33 * scale}Z')`;
 
   const cloudPath = "M141.872 33C167.933 33.0001 190.742 46.6446 203.696 67.1777C206.236 71.2314 210.326 73.9341 214.924 74.6494C251.805 80.4783 280 112.298 280 150.821C280 193.451 247.233 228.001 206.872 228.001H85C48.728 226.014 20 197.611 20 163.009C20.0001 136.673 36.6628 113.994 60.6152 103.794C65.6191 101.674 69.2007 97.0373 70.3184 91.5264C77.0749 58.1431 106.515 33 141.872 33Z";
@@ -219,7 +273,6 @@ const BudgetCloud = ({
     if (onClick) onClick(e);
   };
 
-  // 嘴巴初始尺寸和位置
   const mouthWidth = 40;
   const mouthHeight = 14;
   const mouthX = 150 - mouthWidth / 2;
@@ -244,6 +297,13 @@ const BudgetCloud = ({
         .animate-shake {
           animation: shake 0.6s ease-in-out;
         }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 1; }
+        }
+        .animate-pulse-loading {
+          animation: pulse 1.5s ease-in-out infinite;
+        }
       `}</style>
       
       {/* 云朵背景SVG（带阴影） */}
@@ -266,12 +326,50 @@ const BudgetCloud = ({
         />
       </svg>
       
-      {/* 水波Canvas层（裁剪到云朵形状） */}
+      {/* 【修复2】加载状态指示 */}
+      {isLoading && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            clipPath: scaledCloudPath,
+            WebkitClipPath: scaledCloudPath
+          }}
+        >
+          <div className="animate-pulse-loading text-center">
+            <div 
+              className="w-8 h-8 mx-auto mb-2 rounded-full"
+              style={{ backgroundColor: liquidColor, opacity: 0.3 }}
+            />
+            <span className="text-xs text-gray-400">加载中...</span>
+          </div>
+        </div>
+      )}
+      
+      {/* 【修复2】错误状态提示 */}
+      {loadError && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            clipPath: scaledCloudPath,
+            WebkitClipPath: scaledCloudPath
+          }}
+        >
+          <div className="text-center text-xs text-red-400 px-4">
+            <div className="mb-1">⚠️</div>
+            <div>{loadError}</div>
+            <div className="mt-1 text-gray-400">请刷新重试</div>
+          </div>
+        </div>
+      )}
+      
+      {/* 水波Canvas层 */}
       <div 
         className="absolute inset-0"
         style={{
           clipPath: scaledCloudPath,
-          WebkitClipPath: scaledCloudPath
+          WebkitClipPath: scaledCloudPath,
+          opacity: isLoading ? 0 : 1,
+          transition: 'opacity 0.3s ease-in-out'
         }}
       >
         <canvas 
@@ -290,6 +388,10 @@ const BudgetCloud = ({
         height={displayH}
         viewBox="0 0 300 260"
         preserveAspectRatio="xMidYMid meet"
+        style={{
+          opacity: isLoading ? 0 : 1,
+          transition: 'opacity 0.3s ease-in-out'
+        }}
       >
         <defs>
           <filter id="mouthShadow" x="-50%" y="-50%" width="200%" height="200%">

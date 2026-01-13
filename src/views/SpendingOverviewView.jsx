@@ -1,7 +1,7 @@
 // SpendingOverviewView.jsx - 消费全景页
-// v11: 去除底部列表图标
+// v12: 修复进行中标签旋转、正确计算进行中数量
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Cloud,          
   House,          
@@ -18,6 +18,36 @@ import {
   ContentArea,
   colors 
 } from '../components/design-system';
+import { getSpecialBudgets } from '../api';
+
+// ==========================================
+// 判断预算是否进行中
+// ==========================================
+const isOngoing = (budget) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // 没有日期设置的默认为进行中
+  if (!budget.startDate && !budget.endDate) {
+    return true;
+  }
+  
+  const startDate = budget.startDate ? new Date(budget.startDate) : null;
+  const endDate = budget.endDate ? new Date(budget.endDate) : null;
+  
+  // 已结束
+  if (endDate && endDate < today) {
+    return false;
+  }
+  
+  // 还未开始
+  if (startDate && startDate > today) {
+    return false;
+  }
+  
+  // 进行中
+  return true;
+};
 
 // ==========================================
 // 1. 游戏化卡片组件 (保持不变)
@@ -89,9 +119,10 @@ const GameCard = ({
             {valueSuffix && <span className="text-xs font-bold text-gray-400 ml-0.5">{valueSuffix}</span>}
           </div>
           
+          {/* 修复：移除 rotate-2 旋转 */}
           {badge && (
             <span 
-              className="text-[10px] px-1.5 py-0.5 rounded-md font-black border transform rotate-2 ml-auto"
+              className="text-[10px] px-1.5 py-0.5 rounded-md font-black border"
               style={{ 
                 backgroundColor: badge.bg, 
                 color: badge.color,
@@ -111,22 +142,16 @@ const GameCard = ({
 // ==========================================
 // 2. 底部游戏风格按钮 (无图标版)
 // ==========================================
-// ⚡️ 修改点：移除了 icon 参数和渲染逻辑
 const GameListButton = ({ title, subtitle, onClick }) => (
   <button
     onClick={onClick}
     className="w-full mb-3 group active:scale-[0.98] transition-all"
   >
-    {/* 外层容器：半透明白底 + 柔和边框 */}
     <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-[24px] px-5 py-5 flex items-center justify-between relative overflow-hidden hover:bg-white/15 transition-colors">
-       
-       {/* 文本区域：占据主要空间 */}
        <div className="text-left flex-1 min-w-0 pr-4">
          <p className="text-white font-extrabold text-base leading-tight truncate">{title}</p>
          <p className="text-cyan-100 text-xs font-bold mt-1.5 opacity-90 line-clamp-1">{subtitle}</p>
        </div>
-       
-       {/* 右侧箭头 */}
        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors shrink-0">
          <ChevronRight size={16} className="text-white" strokeWidth={3} />
        </div>
@@ -203,6 +228,27 @@ const SpendingOverviewView = ({
 }) => {
   const [selectedArticle, setSelectedArticle] = useState(null);
   
+  // 新增：进行中的独立预算数量
+  const [ongoingCount, setOngoingCount] = useState(specialBudgetsCount);
+  
+  // 新增：加载独立预算数据并计算进行中数量
+  useEffect(() => {
+    const loadOngoingCount = async () => {
+      try {
+        const result = await getSpecialBudgets();
+        if (result.success && result.data) {
+          const ongoing = result.data.filter(budget => isOngoing(budget));
+          setOngoingCount(ongoing.length);
+        }
+      } catch (error) {
+        console.error('加载独立预算失败:', error);
+        setOngoingCount(specialBudgetsCount);
+      }
+    };
+    
+    loadOngoingCount();
+  }, [specialBudgetsCount]);
+  
   const displayRemaining = weeklyRemaining !== undefined ? weeklyRemaining : (weeklyBudget - weeklySpent);
   
   const progressPercent = weeklyBudget > 0 
@@ -250,10 +296,11 @@ const SpendingOverviewView = ({
                 onClick={() => navigateTo('fixedExpenseList')}
               />
               
+              {/* 修复：使用 ongoingCount 而不是 specialBudgetsCount */}
               <GameCard
                 title="这件事"
                 subtitle="旅行/大件等大事"
-                value={specialBudgetsCount}
+                value={ongoingCount}
                 valuePrefix=""
                 valueColor={colors.purple}
                 icon={Sailboat}
@@ -270,7 +317,7 @@ const SpendingOverviewView = ({
 
           </div>
           
-          {/* 底部锦囊 (无图标) */}
+          {/* 底部锦囊 */}
           <div className="mt-10">
             <div className="flex items-center justify-center gap-2 mb-6 opacity-80">
                <p className="text-white text-xs font-black tracking-wider">为何这样设计</p>
@@ -282,7 +329,6 @@ const SpendingOverviewView = ({
                   key={article.id}
                   title={article.title}
                   subtitle={article.subtitle}
-                  // ⚡️ 这里不再传 icon
                   onClick={() => setSelectedArticle(article)}
                 />
               ))}

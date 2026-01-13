@@ -1,5 +1,5 @@
 // BrandMenuView.jsx - 品牌菜单页面
-// 修复：去掉动效、统一间距、游客模式优化
+// 修复：移除昵称，只显示用户名
 
 import React, { useState, useCallback } from 'react';
 import { Share2, LogOut, MessageCircle, Mail, ChevronRight, HelpCircle } from 'lucide-react';
@@ -267,7 +267,7 @@ const FeedbackModal = ({ isOpen, onClose }) => {
 };
 
 // ==========================================
-// 3. 页面主组件（无动效）
+// 3. 页面主组件
 // ==========================================
 
 const BrandMenuView = ({ 
@@ -306,7 +306,7 @@ const BrandMenuView = ({
       
       {/* 主内容区 */}
       <div className="px-[30px] pt-20 pb-8">
-        {/* 顶部问候 */}
+        {/* 顶部问候 - 使用用户名而不是昵称 */}
         <div className="mb-6">
           <h1 className="text-2xl font-extrabold text-cyan-500 mb-2">
             {getGreeting()}，{isAnonymous ? '朋友' : (currentUser?.username || '用户')}
@@ -317,7 +317,7 @@ const BrandMenuView = ({
           </p>
         </div>
         
-        {/* 功能菜单 - 统一间距 gap-4 = 16px */}
+        {/* 功能菜单 */}
         <div className="mb-6">
           <div className="space-y-3">
             {/* 分享给朋友 */}
@@ -355,7 +355,7 @@ const BrandMenuView = ({
           <div className="w-24 h-px bg-gray-200" />
         </div>
         
-        {/* 账户卡片 - 统一间距 */}
+        {/* 账户卡片 - 只显示用户名 */}
         <div>
           <Card className="!p-0 overflow-hidden">
             {/* 账户信息行 */}
@@ -373,7 +373,7 @@ const BrandMenuView = ({
               </div>
             </div>
             
-            {/* 退出按钮 - 统一间距 */}
+            {/* 退出按钮 */}
             <button
               onClick={() => setShowLogoutConfirm(true)}
               className="w-full px-5 py-4 flex items-center gap-4 active:bg-gray-50 transition-colors"

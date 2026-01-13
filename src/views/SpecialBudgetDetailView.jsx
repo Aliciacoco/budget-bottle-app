@@ -1,8 +1,8 @@
 // SpecialBudgetDetailView.jsx - 专项预算详情页
-// 修复：从 specialBudgets 中获取最新数据，确保编辑后图标更新
+// 修复：导航栏使用设计系统组件，确保电脑端不溢出
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Plus, Settings, Trash2, ChevronRight } from 'lucide-react';
+import { Plus, Settings, Trash2, ChevronRight } from 'lucide-react';
 import { getFloatingIcon } from '../constants/floatingIcons';
 import { 
   getSpecialBudgetItems, 
@@ -12,6 +12,7 @@ import {
 // 导入设计系统组件
 import { 
   PageContainer,
+  TransparentNavBar,
   DuoButton,
   ConfirmModal,
   LoadingOverlay
@@ -61,7 +62,6 @@ const SpecialBudgetDetailView = ({
   
   // 初始加载 - 防止自动滚动
   useEffect(() => {
-    // 保存当前滚动位置并强制回到顶部
     window.scrollTo(0, 0);
     loadItems();
   }, [loadItems]);
@@ -141,6 +141,20 @@ const SpecialBudgetDetailView = ({
     }
   };
   
+  // 导航栏右侧按钮
+  const rightButtons = [
+    {
+      icon: Settings,
+      onClick: goToEdit,
+      variant: 'default'
+    },
+    {
+      icon: Trash2,
+      onClick: () => setShowDeleteBudgetConfirm(true),
+      variant: 'danger'
+    }
+  ];
+  
   if (!budget.id) {
     return (
       <PageContainer bg="gray" className="flex items-center justify-center">
@@ -164,34 +178,14 @@ const SpecialBudgetDetailView = ({
         }
       `}</style>
 
-      {/* 固定透明导航栏 */}
-      <div className="fixed top-0 left-0 right-0 z-20 px-6 pt-4 pb-2 pointer-events-none">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <button 
-            onClick={() => window.history.back()}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 pointer-events-auto active:scale-95"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-          <div className="flex gap-2 pointer-events-auto">
-            <button 
-              onClick={goToEdit}
-              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 active:scale-95"
-            >
-              <Settings size={22} strokeWidth={2.5} />
-            </button>
-            <button 
-              onClick={() => setShowDeleteBudgetConfirm(true)}
-              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-red-400 hover:text-red-500 active:scale-95"
-            >
-              <Trash2 size={22} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* 使用设计系统的导航栏 - 自动适配 480px 容器 */}
+      <TransparentNavBar 
+        onBack={() => window.history.back()}
+        rightButtons={rightButtons}
+      />
 
-      {/* 主内容区 */}
-      <div className="pt-20 px-6 max-w-lg mx-auto space-y-6">
+      {/* 主内容区 - 使用 px-[30px] 与设计系统一致 */}
+      <div className="pt-20 px-[30px] pb-8 space-y-6">
         
         {/* 预算信息卡片 */}
         <div 

@@ -1,17 +1,21 @@
 // BudgetBottleApp.jsx - 主应用文件
-// 修改：电脑端内容居中，最大宽度480px，两侧灰色背景
-// 修复：SpendingOverviewView 传递 transactions 数据
-// 修复：心愿池标题和金额层级最高，不被心愿球遮挡
-// 修改：结算前先询问用户是否存入心愿池
+// 优化：修复白屏加载问题，使用设计系统组件
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronRight, Droplets, X } from 'lucide-react';
+import { ChevronRight, Droplets, RefreshCw, WifiOff } from 'lucide-react';
 
 // 组件导入
 import BudgetCloud, { CLOUD_COLOR } from './components/BudgetCloud';
 import WishPoolBar from './components/WishPoolBar';
 import DraggableBudgetIcons from './components/DraggableBudgetIcons';
 import Calculator from './components/CalculatorModal';
+
+// 设计系统组件导入
+import { 
+  PageContainer, 
+  DuoButton, 
+  colors 
+} from './components/design-system';
 
 // 动画组件导入
 import { 
@@ -55,11 +59,76 @@ import {
   parseWeekKeyToISO
 } from './utils/helpers';
 
-// 设计系统颜色
-const colors = {
-  primary: '#06B6D4',
-  primaryDark: '#0891B2',
+// ===== API 超时包装器 =====
+// 注意：LeanCloud 服务变慢，超时时间调整为 20s
+const withTimeout = (promise, ms = 20000, fallback = null) => {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => 
+      setTimeout(() => {
+        console.warn(`API 请求超时 (${ms}ms)`);
+        resolve(fallback);
+      }, ms)
+    )
+  ]);
 };
+
+// ===== 加载失败提示组件（使用设计系统） =====
+const LoadingErrorView = ({ error, onRetry }) => (
+  <PageContainer>
+    <div className="min-h-screen flex items-center justify-center px-[30px]">
+      <div className="bg-[#F9F9F9] rounded-[20px] p-8 w-full max-w-sm text-center">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center">
+          <WifiOff size={32} className="text-red-400" />
+        </div>
+        <h2 className="text-xl font-extrabold text-gray-700 mb-2">加载失败</h2>
+        <p className="text-gray-400 font-medium mb-6 text-sm">
+          {error || '网络连接异常，请检查网络后重试'}
+        </p>
+        <DuoButton 
+          onClick={onRetry} 
+          variant="primary" 
+          fullWidth 
+          icon={RefreshCw}
+        >
+          重新加载
+        </DuoButton>
+      </div>
+    </div>
+  </PageContainer>
+);
+
+// ===== 全屏加载组件（使用设计系统） =====
+const FullScreenLoader = ({ message = '正在连接服务器...' }) => (
+  <PageContainer>
+    <div className="min-h-screen flex flex-col items-center justify-center">
+      <div className="text-center w-full px-12">
+        {/* 进度条 */}
+        <div className="w-full max-w-[200px] mx-auto mb-4">
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div 
+              className="h-full rounded-full"
+              style={{
+                backgroundColor: colors.primary,
+                animation: 'loading-progress 1.5s ease-in-out infinite'
+              }}
+            />
+          </div>
+        </div>
+        
+        <p className="text-gray-400 font-medium text-sm">{message}</p>
+      </div>
+      
+      <style>{`
+        @keyframes loading-progress {
+          0% { width: 0%; margin-left: 0%; }
+          50% { width: 60%; margin-left: 20%; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+      `}</style>
+    </div>
+  </PageContainer>
+);
 
 // ===== 结算确认弹窗组件 =====
 const SettlementConfirmModal = ({ 
@@ -76,7 +145,6 @@ const SettlementConfirmModal = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-6">
       <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
-        {/* 顶部图标 */}
         <div className="pt-8 pb-4 flex justify-center">
           <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
             isPositive ? 'bg-cyan-100' : 'bg-gray-100'
@@ -85,7 +153,6 @@ const SettlementConfirmModal = ({
           </div>
         </div>
         
-        {/* 内容 */}
         <div className="px-6 pb-6 text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">
             {weekLabel} 结算
@@ -93,52 +160,34 @@ const SettlementConfirmModal = ({
           
           {isPositive ? (
             <>
-              <p className="text-gray-500 mb-4">
-                上周你节省了
-              </p>
-              <p className="text-4xl font-extrabold text-cyan-500 mb-4" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
+              <p className="text-gray-500 mb-4">上周你节省了</p>
+              <p className="text-4xl font-extrabold text-cyan-500 mb-4 font-rounded">
                 ¥{savedAmount.toLocaleString()}
               </p>
-              <p className="text-gray-500 text-sm">
-                是否存入心愿池？
-              </p>
+              <p className="text-gray-500 text-sm">是否存入心愿池？</p>
             </>
           ) : (
             <>
-              <p className="text-gray-500 mb-4">
-                上周预算已用完
-              </p>
-              <p className="text-2xl font-bold text-gray-400 mb-4">
-                没有余额可存入
-              </p>
+              <p className="text-gray-500 mb-4">上周预算已用完</p>
+              <p className="text-2xl font-bold text-gray-400 mb-4">没有余额可存入</p>
             </>
           )}
         </div>
         
-        {/* 按钮 */}
         <div className="px-6 pb-8 space-y-3">
           {isPositive ? (
             <>
-              <button
-                onClick={onConfirm}
-                className="w-full py-4 bg-cyan-500 text-white font-bold rounded-2xl active:scale-[0.98] transition-transform"
-              >
+              <DuoButton onClick={onConfirm} variant="primary" fullWidth>
                 存入心愿池
-              </button>
-              <button
-                onClick={onSkip}
-                className="w-full py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl active:scale-[0.98] transition-transform"
-              >
+              </DuoButton>
+              <DuoButton onClick={onSkip} variant="secondary" fullWidth>
                 暂不存入
-              </button>
+              </DuoButton>
             </>
           ) : (
-            <button
-              onClick={onSkip}
-              className="w-full py-4 bg-gray-100 text-gray-600 font-bold rounded-2xl active:scale-[0.98] transition-transform"
-            >
+            <DuoButton onClick={onSkip} variant="secondary" fullWidth>
               知道了
-            </button>
+            </DuoButton>
           )}
         </div>
       </div>
@@ -206,6 +255,11 @@ const getPreviousWeekInfo = (currentWeekInfo) => {
 
 // ===== 主组件 =====
 const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
+  // ===== 加载状态 =====
+  const [loadingState, setLoadingState] = useState('connecting'); // connecting | loading | ready | error
+  const [loadingMessage, setLoadingMessage] = useState('正在连接服务器...');
+  const [loadError, setLoadError] = useState(null);
+  
   // ===== 基础状态 =====
   const [currentView, setCurrentView] = useState('home');
   const [viewParams, setViewParams] = useState({});
@@ -242,7 +296,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   
   // ===== 动画状态 =====
   const [showCelebration, setShowCelebration] = useState(false);
-  const [settlementPhase, setSettlementPhase] = useState('idle'); // idle | raining | result
+  const [settlementPhase, setSettlementPhase] = useState('idle');
   const [drainProgress, setDrainProgress] = useState(0);
   const [poolFillAmount, setPoolFillAmount] = useState(0);
   const [showResultModal, setShowResultModal] = useState(false);
@@ -251,9 +305,9 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 结算确认弹窗状态 =====
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
   const [pendingSettlementData, setPendingSettlementData] = useState(null);
-  const [isTestMode, setIsTestMode] = useState(false); // 测试模式标志
+  const [isTestMode, setIsTestMode] = useState(false);
   
-  // ===== 待结算队列（支持多周结算动画） =====
+  // ===== 待结算队列 =====
   const [pendingSettlements, setPendingSettlements] = useState([]);
   
   // ===== 调试模式 =====
@@ -281,7 +335,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const displayRemaining = isInitialLoading ? 0 : remaining;
   const displayPoolAmount = wishPoolAmount === null ? 0 : wishPoolAmount;
   
-  // 固定支出计算
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
   const fixedExpensesTotal = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
   
@@ -309,22 +362,18 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 播放结算动画 =====
   const playSettlementAnimation = useCallback((savedAmount, isEmpty) => {
     return new Promise((resolve) => {
-      // 1. 开始下雨动画
       setSettlementPhase('raining');
       setSettlementData({ saved: savedAmount, isEmpty });
       
-      // 2. 金额渐变动画（2.5秒内从0增加到savedAmount）
       if (savedAmount > 0) {
         const startTime = Date.now();
         const duration = 2500;
-        const startAmount = 0;
         
         const animateAmount = () => {
           const elapsed = Date.now() - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          // 使用 easeOutCubic 缓动函数
           const easeProgress = 1 - Math.pow(1 - progress, 3);
-          const currentAmount = startAmount + (savedAmount * easeProgress);
+          const currentAmount = savedAmount * easeProgress;
           setPoolFillAmount(currentAmount);
           
           if (progress < 1) {
@@ -334,7 +383,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         requestAnimationFrame(animateAmount);
       }
       
-      // 3. 下雨持续 2.5 秒后显示结果
       setTimeout(() => {
         setSettlementPhase('result');
         setShowResultModal(true);
@@ -347,49 +395,51 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   useEffect(() => {
     if (pendingSettlements.length > 0 && settlementPhase === 'idle' && !isInitialLoading) {
       const nextSettlement = pendingSettlements[0];
-      
-      // 播放动画
       playSettlementAnimation(nextSettlement.saved, nextSettlement.isEmpty);
-      
-      // 从队列中移除
       setPendingSettlements(prev => prev.slice(1));
     }
   }, [pendingSettlements, settlementPhase, isInitialLoading, playSettlementAnimation]);
   
-  // ===== 检查上周是否需要结算（只检查，不自动结算） =====
+  // ===== 检查上周结算 =====
   const checkPreviousWeekSettlement = async (currentWeekInfo) => {
     try {
       const prevWeekInfo = getPreviousWeekInfo(currentWeekInfo);
       const weekKey = prevWeekInfo.weekKey;
       
-      // 检查该周是否已结算
-      const settledResult = await checkWeekSettled(weekKey);
-      if (settledResult.settled) {
-        console.log(`✅ ${weekKey} 已结算`);
+      const settledResult = await withTimeout(
+        checkWeekSettled(weekKey),
+        5000,
+        { success: true, settled: true }
+      );
+      
+      if (settledResult?.settled) {
         return null;
       }
       
-      // 获取该周的预算
-      const budgetRes = await getWeeklyBudget(weekKey);
-      if (!budgetRes.success || !budgetRes.data) {
-        console.log(`⏭️ ${weekKey} 没有设置预算，跳过`);
+      const budgetRes = await withTimeout(
+        getWeeklyBudget(weekKey),
+        5000,
+        { success: false }
+      );
+      
+      if (!budgetRes?.success || !budgetRes?.data) {
         return null;
       }
       
       const budget = budgetRes.data.amount;
       
-      // 获取该周的支出
-      const transRes = await getTransactions(weekKey);
-      const spent = transRes.success 
+      const transRes = await withTimeout(
+        getTransactions(weekKey),
+        5000,
+        { success: true, data: [] }
+      );
+      
+      const spent = transRes?.success 
         ? transRes.data.reduce((sum, t) => sum + t.amount, 0) 
         : 0;
       
-      // 计算节省金额
       const saved = budget - spent;
       
-      console.log(`📊 ${weekKey} 待结算: 预算=${budget}, 支出=${spent}, 节省=${saved}`);
-      
-      // 返回待结算数据，让用户确认
       return {
         weekKey,
         weekLabel: parseWeekKeyToISO(weekKey),
@@ -410,10 +460,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     
     const { weekKey, budget, spent, saved } = pendingSettlementData;
     
-    // 关闭确认弹窗
     setShowSettlementConfirm(false);
     
-    // 测试模式：只播放动画，不保存数据
     if (isTestMode) {
       setPendingSettlements([{
         weekKey,
@@ -425,21 +473,11 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       return;
     }
     
-    // 正式模式：创建心愿池历史记录
     const historyResult = await createWishPoolHistory(
-      weekKey,
-      budget,
-      spent,
-      saved,
-      false,
-      '',
-      ''
+      weekKey, budget, spent, saved, false, '', ''
     );
     
     if (historyResult.success && historyResult.isNew) {
-      console.log(`✅ ${weekKey} 结算成功`);
-      
-      // 播放动画
       setPendingSettlements([{
         weekKey,
         saved: Math.max(0, saved),
@@ -454,8 +492,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const handleSkipSettlement = () => {
     setShowSettlementConfirm(false);
     setPendingSettlementData(null);
-    setIsTestMode(false); // 重置测试模式
-    // 不做任何记录，用户可以在水位变动记录中手动转入
+    setIsTestMode(false);
   };
   
   // ===== 加载次要数据 =====
@@ -464,23 +501,27 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     
     try {
       const [specialRes, fixedRes] = await Promise.all([
-        getSpecialBudgets(),
-        getFixedExpenses()
+        withTimeout(getSpecialBudgets(), 15000, { success: true, data: [] }),
+        withTimeout(getFixedExpenses(), 15000, { success: true, data: [] })
       ]);
       
-      if (specialRes.success) {
+      if (specialRes?.success) {
         setSpecialBudgets(specialRes.data);
         const itemsMap = {};
         for (const budget of specialRes.data) {
-          const itemsRes = await getSpecialBudgetItems(budget.id);
-          if (itemsRes.success) {
+          const itemsRes = await withTimeout(
+            getSpecialBudgetItems(budget.id),
+            5000,
+            { success: true, data: [] }
+          );
+          if (itemsRes?.success) {
             itemsMap[budget.id] = itemsRes.data;
           }
         }
         setSpecialBudgetItems(itemsMap);
       }
       
-      if (fixedRes.success) setFixedExpenses(fixedRes.data);
+      if (fixedRes?.success) setFixedExpenses(fixedRes.data);
       
       setIsSecondaryLoaded(true);
     } catch (error) {
@@ -488,71 +529,112 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     }
   };
   
-  // ===== 初始化 =====
-  useEffect(() => {
-    const loadCoreData = async () => {
-      try {
-        // 检查上周是否需要结算（只检查，不自动结算）
-        const settlementData = await checkPreviousWeekSettlement(weekInfo);
-        
-        // 加载本周数据
-        const [budgetRes, transRes, poolRes, wishesRes] = await Promise.all([
-          getWeeklyBudget(weekInfo.weekKey),
-          getTransactions(weekInfo.weekKey),
-          getWishPool(),
-          getWishes()
-        ]);
-        
-        if (budgetRes.success) setWeeklyBudget(budgetRes.data);
-        if (transRes.success) {
-          setTransactions(transRes.data);
-          setViewingTransactions(transRes.data);
-        }
-        if (poolRes.success) setWishPoolAmount(poolRes.data.amount);
-        if (wishesRes.success) setWishes(wishesRes.data);
-        
-        saveToCache({
-          weeklyBudget: budgetRes.data,
-          transactions: transRes.data,
-          wishPoolAmount: poolRes.data?.amount,
-          wishes: wishesRes.data
-        });
-        
-        setIsDataReady(true);
-        setIsInitialLoading(false);
-        
-        // 如果有待结算数据，显示确认弹窗
-        if (settlementData) {
-          setTimeout(() => {
-            setPendingSettlementData(settlementData);
-            setShowSettlementConfirm(true);
-          }, 500);
-        }
-        
-        setTimeout(() => loadSecondaryData(), 500);
-        
-      } catch (error) {
-        console.error('数据加载失败:', error);
-        const cached = loadFromCache();
-        if (cached) {
-          if (cached.weeklyBudget) setWeeklyBudget(cached.weeklyBudget);
-          if (cached.transactions) {
-            setTransactions(cached.transactions);
-            setViewingTransactions(cached.transactions);
-          }
-          if (cached.wishPoolAmount !== undefined) setWishPoolAmount(cached.wishPoolAmount);
-          if (cached.wishes) setWishes(cached.wishes);
-        }
-        setIsDataReady(true);
-        setIsInitialLoading(false);
-      }
-    };
+  // ===== 初始化 - 添加超时和错误处理 =====
+  const loadCoreData = useCallback(async () => {
+    setLoadingState('connecting');
+    setLoadingMessage('正在连接服务器...');
+    setLoadError(null);
     
-    loadCoreData();
+    // 先尝试使用缓存数据快速显示
+    const cached = loadFromCache();
+    if (cached) {
+      if (cached.weeklyBudget) setWeeklyBudget(cached.weeklyBudget);
+      if (cached.transactions) {
+        setTransactions(cached.transactions);
+        setViewingTransactions(cached.transactions);
+      }
+      if (cached.wishPoolAmount !== undefined) setWishPoolAmount(cached.wishPoolAmount);
+      if (cached.wishes) setWishes(cached.wishes);
+      
+      // 有缓存时直接显示界面
+      setIsDataReady(true);
+      setIsInitialLoading(false);
+      setLoadingState('ready');
+    }
+    
+    try {
+      setLoadingMessage('正在加载数据...');
+      setLoadingState('loading');
+      
+      // 检查上周结算
+      const settlementData = await withTimeout(
+        checkPreviousWeekSettlement(weekInfo),
+        8000,
+        null
+      );
+      
+      // 并行加载核心数据
+      const [budgetRes, transRes, poolRes, wishesRes] = await Promise.all([
+        withTimeout(getWeeklyBudget(weekInfo.weekKey), 20000, { success: false }),
+        withTimeout(getTransactions(weekInfo.weekKey), 20000, { success: false }),
+        withTimeout(getWishPool(), 20000, { success: false }),
+        withTimeout(getWishes(), 20000, { success: false })
+      ]);
+      
+      // 检查是否全部失败
+      const allFailed = !budgetRes?.success && !transRes?.success && 
+                        !poolRes?.success && !wishesRes?.success;
+      
+      if (allFailed && !cached) {
+        throw new Error('无法连接到服务器，请检查网络连接');
+      }
+      
+      // 更新状态
+      if (budgetRes?.success) setWeeklyBudget(budgetRes.data);
+      if (transRes?.success) {
+        setTransactions(transRes.data);
+        setViewingTransactions(transRes.data);
+      }
+      if (poolRes?.success) setWishPoolAmount(poolRes.data.amount);
+      if (wishesRes?.success) setWishes(wishesRes.data);
+      
+      // 保存缓存
+      saveToCache({
+        weeklyBudget: budgetRes?.data || cached?.weeklyBudget,
+        transactions: transRes?.data || cached?.transactions,
+        wishPoolAmount: poolRes?.data?.amount ?? cached?.wishPoolAmount,
+        wishes: wishesRes?.data || cached?.wishes
+      });
+      
+      setIsDataReady(true);
+      setIsInitialLoading(false);
+      setLoadingState('ready');
+      
+      // 显示结算确认弹窗
+      if (settlementData) {
+        setTimeout(() => {
+          setPendingSettlementData(settlementData);
+          setShowSettlementConfirm(true);
+        }, 500);
+      }
+      
+      // 延迟加载次要数据
+      setTimeout(() => loadSecondaryData(), 500);
+      
+    } catch (error) {
+      console.error('数据加载失败:', error);
+      
+      // 如果有缓存，使用缓存继续
+      if (cached) {
+        setIsDataReady(true);
+        setIsInitialLoading(false);
+        setLoadingState('ready');
+      } else {
+        setLoadError(error.message || '加载失败，请重试');
+        setLoadingState('error');
+      }
+    }
   }, [weekInfo.weekKey]);
   
+  // ===== 初始化 =====
   useEffect(() => {
-    if ((currentView === 'budgetSetup' || currentView === 'specialBudgetTimeline' || currentView === 'spendingOverview' || currentView === 'fixedExpenseList') && !isSecondaryLoaded) {
+    loadCoreData();
+  }, [loadCoreData]);
+  
+  useEffect(() => {
+    if ((currentView === 'budgetSetup' || currentView === 'specialBudgetTimeline' || 
+         currentView === 'spendingOverview' || currentView === 'fixedExpenseList') && 
+        !isSecondaryLoaded) {
       loadSecondaryData();
     }
   }, [currentView, isSecondaryLoaded]);
@@ -629,7 +711,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     setDrainProgress(0);
     setPoolFillAmount(0);
     
-    // 刷新心愿池金额
     try {
       const poolRes = await getWishPool();
       if (poolRes.success) {
@@ -713,6 +794,16 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   
   // ===== 首页渲染 =====
   const renderHomeView = () => {
+    // 显示加载状态
+    if (loadingState === 'connecting' || loadingState === 'loading') {
+      return <FullScreenLoader message={loadingMessage} />;
+    }
+    
+    // 显示错误状态
+    if (loadingState === 'error') {
+      return <LoadingErrorView error={loadError} onRetry={loadCoreData} />;
+    }
+    
     const subtitles = isCountdownActive 
       ? [
           `预算 ¥${budgetAmount.toLocaleString()}，已用 ¥${weeklySpent.toLocaleString()}`,
@@ -724,160 +815,141 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           `${weekInfo.isoYear || weekInfo.year}年 第${weekInfo.isoWeekNumber || weekInfo.weekNumber}周`
         ];
     
+    // 骨架屏
     if (isInitialLoading) {
       return (
-        <>
+        <PageContainer bg="gray">
+          <div className="absolute top-8 left-6 z-20">
+            <div className="h-8 w-24 bg-gray-200 rounded-lg skeleton-pulse" />
+          </div>
+          <div className="absolute top-8 right-6 z-20">
+            <div className="w-10 h-10 bg-gray-200 rounded-2xl skeleton-pulse" />
+          </div>
+          <div className="min-h-screen flex flex-col items-center justify-center px-6">
+            <div className="text-center" style={{ marginBottom: '50px' }}>
+              <div className="h-10 w-32 bg-gray-200 rounded-xl mx-auto skeleton-pulse" />
+              <div className="h-4 w-48 bg-gray-100 rounded-lg mx-auto mt-3 skeleton-pulse" />
+            </div>
+            <div className="w-full flex justify-center" style={{ maxWidth: '280px' }}>
+              <div className="w-[200px] h-[160px] bg-gray-100 rounded-[60px] skeleton-pulse" />
+            </div>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 px-6 pb-8">
+            <div className="h-6 w-24 bg-gray-200 rounded-lg skeleton-pulse mb-2" />
+            <div className="h-8 w-32 bg-gray-100 rounded-lg skeleton-pulse" />
+          </div>
           <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-            .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
             .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
           `}</style>
-          {/* 外层灰色背景 */}
-          <div className="min-h-screen bg-gray-100">
-            {/* 内容居中，最大宽度 480px */}
-            <div className="min-h-screen bg-gray-50 max-w-[480px] mx-auto relative shadow-sm flex flex-col">
-              <div className="absolute top-8 left-6 z-20">
-                <div className="h-8 w-24 bg-gray-200 rounded-lg skeleton-pulse" />
-              </div>
-              <div className="absolute top-8 right-6 z-20">
-                <div className="w-10 h-10 bg-gray-200 rounded-2xl skeleton-pulse" />
-              </div>
-              <div className="flex-1 flex flex-col items-center justify-center px-6">
-                <div className="text-center" style={{ marginBottom: '50px' }}>
-                  <div className="h-10 w-32 bg-gray-200 rounded-xl mx-auto skeleton-pulse" />
-                  <div className="h-4 w-48 bg-gray-100 rounded-lg mx-auto mt-3 skeleton-pulse" />
-                </div>
-                <div className="w-full flex justify-center" style={{ maxWidth: '280px' }}>
-                  <div className="w-[200px] h-[160px] bg-gray-100 rounded-[60px] skeleton-pulse" />
-                </div>
-              </div>
-              <div className="px-6 pb-8">
-                <div className="h-6 w-24 bg-gray-200 rounded-lg skeleton-pulse mb-2" />
-                <div className="h-8 w-32 bg-gray-100 rounded-lg skeleton-pulse" />
-              </div>
-            </div>
-          </div>
-        </>
+        </PageContainer>
       );
     }
     
     return (
       <>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
-          .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
-        `}</style>
-
-        {/* 外层灰色背景 */}
-        <div className="min-h-screen bg-gray-100">
-          {/* 内容居中，最大宽度 480px */}
+        <PageContainer>
           <div 
             ref={homeContainerRef} 
-            className="min-h-screen bg-white max-w-[480px] mx-auto relative shadow-sm"
+            className="min-h-screen flex flex-col relative"
           >
-            {/* 主内容区域 */}
-            <div className="min-h-screen flex flex-col relative">
-              {/* 顶部导航按钮区域 */}
-              <div className="absolute top-0 left-0 right-0 h-20 z-20 px-6 flex items-center justify-between border-b border-[#F3F4F6]">
-                {/* 左上角：CloudPool Logo */}
-                <button 
-                  onClick={() => navigateTo('brandMenu')} 
-                  className="text-cyan-500 font-extrabold text-xl font-rounded active:scale-95 transition-all"
-                >
-                  CloudPool
-                </button>
-                
-                {/* 右上角：消费全景入口 */}
-                <button 
-                  onClick={() => navigateTo('spendingOverview')} 
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center hover:shadow-md transition-all active:scale-95 bg-white"
-                >
-                  <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect fill="white"/>
-                    <rect x="6" y="6" width="23" height="6" rx="3" fill="#00C3E0"/>
-                    <path d="M26 12L26 6L26.2143 6C27.7528 6 29 7.34312 29 9C29 10.6569 27.7528 12 26.2143 12L26 12Z" fill="#00C7E4"/>
-                    <path d="M9 12L9 6L8.78571 6C7.24719 6 6 7.34312 6 9C6 10.6569 7.24719 12 8.78571 12L9 12Z" fill="#00C7E4"/>
-                    <rect x="6" y="15" width="23" height="6" rx="3" fill="#FFC800"/>
-                    <path d="M26 21L26 15L26.2143 15C27.7528 15 29 16.3431 29 18C29 19.6569 27.7528 21 26.2143 21L26 21Z" fill="#FFC200"/>
-                    <path d="M9 21L9 15L8.78571 15C7.24719 15 6 16.3431 6 18C6 19.6569 7.24719 21 8.78571 21L9 21Z" fill="#FFC200"/>
-                    <rect x="6" y="24" width="23" height="6" rx="3" fill="#A568CC"/>
-                    <path d="M26 30L26 24L26.2143 24C27.7528 24 29 25.3431 29 27C29 28.6569 27.7528 30 26.2143 30L26 30Z" fill="#CE82FF"/>
-                    <path d="M9 30L9 24L8.78571 24C7.24719 24 6 25.3431 6 27C6 28.6569 7.24719 30 8.78571 30L9 30Z" fill="#CE82FF"/>
-                  </svg>
-                </button>
-              </div>
+            {/* 顶部导航 */}
+            <div className="absolute top-0 left-0 right-0 h-20 z-20 px-6 flex items-center justify-between border-b border-[#F3F4F6]">
+              <button 
+                onClick={() => navigateTo('brandMenu')} 
+                className="text-cyan-500 font-extrabold text-xl font-rounded active:scale-95 transition-all"
+              >
+                CloudPool
+              </button>
               
-              {/* 可拖拽的独立预算图标 - z-index 设为 15，低于心愿池 */}
-              {pinnedBudgets.length > 0 && (
-                <DraggableBudgetIcons
-                  budgets={pinnedBudgets}
-                  onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
-                  cloudRef={cloudRef}
-                  setSpecialBudgets={setSpecialBudgets}
-                />
-              )}
-              
-              {/* 主内容 - 缩小云朵和心愿池间距 */}
-              <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10" style={{ paddingBottom: '0px' }}>
-                <div 
-                  className="text-center cursor-pointer active:opacity-80" 
-                  style={{ marginBottom: '12px' }}
-                  onClick={() => navigateTo('transactionList')}
+              <button 
+                onClick={() => navigateTo('spendingOverview')} 
+                className="w-10 h-10 rounded-2xl flex items-center justify-center hover:shadow-md transition-all active:scale-95 bg-white"
+              >
+                <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect fill="white"/>
+                  <rect x="6" y="6" width="23" height="6" rx="3" fill="#00C3E0"/>
+                  <path d="M26 12L26 6L26.2143 6C27.7528 6 29 7.34312 29 9C29 10.6569 27.7528 12 26.2143 12L26 12Z" fill="#00C7E4"/>
+                  <path d="M9 12L9 6L8.78571 6C7.24719 6 6 7.34312 6 9C6 10.6569 7.24719 12 8.78571 12L9 12Z" fill="#00C7E4"/>
+                  <rect x="6" y="15" width="23" height="6" rx="3" fill="#FFC800"/>
+                  <path d="M26 21L26 15L26.2143 15C27.7528 15 29 16.3431 29 18C29 19.6569 27.7528 21 26.2143 21L26 21Z" fill="#FFC200"/>
+                  <path d="M9 21L9 15L8.78571 15C7.24719 15 6 16.3431 6 18C6 19.6569 7.24719 21 8.78571 21L9 21Z" fill="#FFC200"/>
+                  <rect x="6" y="24" width="23" height="6" rx="3" fill="#A568CC"/>
+                  <path d="M26 30L26 24L26.2143 24C27.7528 24 29 25.3431 29 27C29 28.6569 27.7528 30 26.2143 30L26 30Z" fill="#CE82FF"/>
+                  <path d="M9 30L9 24L8.78571 24C7.24719 24 6 25.3431 6 27C6 28.6569 7.24719 30 8.78571 30L9 30Z" fill="#CE82FF"/>
+                </svg>
+              </button>
+            </div>
+            
+            {/* 可拖拽的独立预算图标 */}
+            {pinnedBudgets.length > 0 && (
+              <DraggableBudgetIcons
+                budgets={pinnedBudgets}
+                onBudgetClick={(budget) => navigateTo('specialBudgetDetail', { editingSpecialBudget: budget })}
+                cloudRef={cloudRef}
+                setSpecialBudgets={setSpecialBudgets}
+              />
+            )}
+            
+            {/* 主内容 */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10" style={{ paddingBottom: '0px' }}>
+              <div 
+                className="text-center cursor-pointer active:opacity-80" 
+                style={{ marginBottom: '12px' }}
+                onClick={() => navigateTo('transactionList')}
+              >
+                <h1 
+                  className="font-extrabold leading-none font-rounded"
+                  style={{ fontSize: '32px', color: colors.primary }}
                 >
-                  <h1 
-                    className="font-extrabold leading-none font-rounded"
-                    style={{ fontSize: '32px', color: colors.primary }}
-                  >
-                    <span className="text-2xl mr-1 text-gray-300">¥</span>
-                    {displayRemaining.toLocaleString()}
-                  </h1>
-                  <div 
-                    className="flex items-center gap-1 mt-3 font-bold mx-auto justify-center text-gray-400"
-                    style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
-                  >
-                    <span className="text-sm">{subtitles[subtitleIndex]}</span>
-                    <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
-                  </div>
-                </div>
-                
+                  <span className="text-2xl mr-1 text-gray-300">¥</span>
+                  {displayRemaining.toLocaleString()}
+                </h1>
                 <div 
-                  ref={cloudRef}
-                  className="w-full flex justify-center" 
-                  style={{ maxWidth: '320px', marginBottom: '-40px' }}
+                  className="flex items-center gap-1 mt-3 font-bold mx-auto justify-center text-gray-400"
+                  style={{ opacity: subtitleOpacity, transition: 'opacity 500ms ease-in-out' }}
                 >
-                  <BudgetCloud 
-                    remaining={displayRemaining} 
-                    total={budgetAmount} 
-                    spent={weeklySpent} 
-                    onClick={openAddTransactionModal}
-                    drainProgress={drainProgress}
-                    isShaking={settlementPhase === 'shaking'}
-                  />
+                  <span className="text-sm">{subtitles[subtitleIndex]}</span>
+                  <ChevronRight size={16} strokeWidth={2.5} className="relative top-[0.5px]"/>
                 </div>
               </div>
               
-              {/* 心愿池 - z-index 提高到 30，确保标题和金额不被遮挡 */}
-              <div ref={poolRef} style={{ 
-                transform: 'translateY(-50px)', 
-                position: 'relative', 
-                zIndex: 30 
-              }}>
-                <WishPoolBar 
-                  poolAmount={isDebugMode ? debugPoolAmount : (displayPoolAmount + poolFillAmount)} 
-                  animatingAmount={poolFillAmount}
-                  wishes={wishes} 
-                  onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
-                  onPoolClick={() => navigateTo('wishPoolDetail')} 
-                  debugMode={isDebugMode} 
-                  onDebugChange={handleDebugChange}
+              <div 
+                ref={cloudRef}
+                className="w-full flex justify-center" 
+                style={{ maxWidth: '320px', marginBottom: '-40px' }}
+              >
+                <BudgetCloud 
+                  remaining={displayRemaining} 
+                  total={budgetAmount} 
+                  spent={weeklySpent} 
+                  onClick={openAddTransactionModal}
+                  drainProgress={drainProgress}
+                  isShaking={settlementPhase === 'shaking'}
                 />
               </div>
             </div>
+            
+            {/* 心愿池 */}
+            <div ref={poolRef} style={{ 
+              transform: 'translateY(-50px)', 
+              position: 'relative', 
+              zIndex: 30 
+            }}>
+              <WishPoolBar 
+                poolAmount={isDebugMode ? debugPoolAmount : (displayPoolAmount + poolFillAmount)} 
+                animatingAmount={poolFillAmount}
+                wishes={wishes} 
+                onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
+                onPoolClick={() => navigateTo('wishPoolDetail')} 
+                debugMode={isDebugMode} 
+                onDebugChange={handleDebugChange}
+              />
+            </div>
           </div>
-        </div>
+        </PageContainer>
         
-        {/* 结算确认弹窗 */}
+        {/* 弹窗和动画 */}
         <SettlementConfirmModal
           isOpen={showSettlementConfirm}
           weekLabel={pendingSettlementData?.weekLabel || ''}
@@ -886,13 +958,11 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           onSkip={handleSkipSettlement}
         />
         
-        {/* 下雨动画 */}
         <RainEffect 
           isActive={settlementPhase === 'raining'}
           cloudRef={cloudRef}
         />
         
-        {/* 结算结果弹窗 */}
         <SettlementResultModal
           isOpen={showResultModal}
           savedAmount={settlementData.saved}
@@ -1020,7 +1090,6 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
           />
         );
         
-      
       case 'editFixedExpense':
         return (
           <EditFixedExpenseView
