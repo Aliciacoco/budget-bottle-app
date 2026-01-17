@@ -173,30 +173,36 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
   const [showGetAccount, setShowGetAccount] = useState(false);
   
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!username.trim()) {
-      setError('请输入账号');
-      return;
-    }
-    
-    if (!password) {
-      setError('请输入密码');
-      return;
-    }
-    
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const result = login(username, password);
-    setIsLoading(false);
+  e.preventDefault();
+  setError('');
+  
+  if (!username.trim()) {
+    setError('请输入账号');
+    return;
+  }
+  
+  if (!password) {
+    setError('请输入密码');
+    return;
+  }
+  
+  setIsLoading(true);
+  
+  try {
+    const result = await login(username, password);  // ✅ 加上 await
     
     if (result.success) {
       onLoginSuccess(result.user);
     } else {
-      setError(result.error);
+      setError(result.error || '登录失败');
     }
-  };
+  } catch (err) {
+    setError('网络错误，请重试');
+    console.error('登录异常:', err);
+  } finally {
+    setIsLoading(false);
+  }
+};
   
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

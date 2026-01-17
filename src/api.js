@@ -1,88 +1,87 @@
-import AV from './leancloud';
+// api.js - 腾讯云开发版本
+// ✅ 新增数据：不手动添加 userId，让 CloudBase 自动注入 _openid
+// ✅ 查询数据：兼容旧数据的 userId 字段
+// ✅ 修复：getWishes 时自动转换图片 fileID 为临时URL
+
+import app from './cloudbase';
+import { db, _ } from './cloudbase';
 import { getUserPrefix } from './auth';
 
 // ==================== 工具函数 ====================
 
-const setPublicACL = (obj) => {
-  const acl = new AV.ACL();
-  acl.setPublicReadAccess(true);
-  acl.setPublicWriteAccess(true);
-  obj.setACL(acl);
-  return obj;
+const fixAmount = (amount) => Math.round(amount * 100) / 100;
+
+// 获取当前用户ID（仅用于查询兼容旧数据）
+const getCurrentUserId = () => getUserPrefix();
+
+// ✅ 查询时兼容：同时匹配 _openid 和旧的 userId
+const getUserCondition = () => {
+  const uid = getCurrentUserId();
+  return _.or([{ _openid: uid }, { userId: uid }]);
 };
 
-// 金额精度处理 - 保留2位小数
-const fixAmount = (amount) => {
-  return Math.round(amount * 100) / 100;
+// 复合查询条件（用户条件 + 其他条件）
+const withUserCondition = (otherConditions) => {
+  return _.and([getUserCondition(), otherConditions]);
 };
 
-// 静默日志（生产环境关闭）
-const DEBUG = false;
-const log = (...args) => DEBUG && console.log(...args);
-
-// ==================== 用户数据隔离 ====================
-// 所有数据都带上 userId 字段，实现账号间数据隔离
-
-const getCurrentUserId = () => {
-  return getUserPrefix(); // 返回当前登录用户的 username
-};
-
-// 为对象设置用户ID
-const setUserId = (obj) => {
-  obj.set('userId', getCurrentUserId());
-  return obj;
-};
-
-// 为查询添加用户过滤
-const addUserFilter = (query) => {
-  query.equalTo('userId', getCurrentUserId());
-  return query;
+// ✅ 将 fileID (cloud://) 转换为临时访问URL
+const convertFileIdsToUrls = async (fileIds) => {
+  if (!fileIds || fileIds.length === 0) return {};
+  
+  try {
+    const result = await app.getTempFileURL({
+      fileList: fileIds
+    });
+    
+    const urlMap = {};
+    if (result.fileList) {
+      result.fileList.forEach(item => {
+        if (item.fileID && item.tempFileURL) {
+          urlMap[item.fileID] = item.tempFileURL;
+        }
+      });
+    }
+    return urlMap;
+  } catch (error) {
+    console.error('转换文件URL失败:', error);
+    return {};
+  }
 };
 
 // ==================== 防重复提交锁 ====================
 const pendingOperations = new Map();
 
 const withLock = async (key, operation) => {
-  if (pendingOperations.has(key)) {
-    return pendingOperations.get(key);
-  }
-  
-  const promise = operation().finally(() => {
-    pendingOperations.delete(key);
-  });
-  
+  if (pendingOperations.has(key)) return pendingOperations.get(key);
+  const promise = operation().finally(() => pendingOperations.delete(key));
   pendingOperations.set(key, promise);
   return promise;
 };
 
-// ==================== 周预算相关 API ====================
+// ==================== 周预算 ====================
 
 export const getWeeklyBudget = async (weekKey) => {
   try {
-    const query = new AV.Query('WeeklyBudget');
-    query.equalTo('weekKey', weekKey);
-    addUserFilter(query); // 添加用户过滤
-    const budget = await query.first();
+    const { data } = await db.collection('WeeklyBudget')
+      .where(withUserCondition({ weekKey }))
+      .limit(1).get();
     
-    if (budget) {
-      log('✅ 加载周预算:', weekKey);
+    if (data.length > 0) {
+      const budget = data[0];
       return {
         success: true,
         data: {
-          id: budget.id,
-          weekKey: budget.get('weekKey'),
-          amount: fixAmount(budget.get('amount')),
-          settled: budget.get('settled') || false,
-          createdAt: budget.get('createdAt')
+          id: budget._id,
+          weekKey: budget.weekKey,
+          amount: fixAmount(budget.amount),
+          settled: budget.settled || false,
+          createdAt: budget.createdAt
         }
       };
     }
-    
     return { success: true, data: null };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: null };
-    }
     console.error('加载周预算失败:', error);
     return { success: false, error: error.message };
   }
@@ -91,44 +90,22 @@ export const getWeeklyBudget = async (weekKey) => {
 export const saveWeeklyBudget = async (weekKey, amount) => {
   return withLock(`saveWeeklyBudget:${weekKey}`, async () => {
     try {
-      let budget = null;
-      
-      try {
-        const query = new AV.Query('WeeklyBudget');
-        query.equalTo('weekKey', weekKey);
-        addUserFilter(query); // 添加用户过滤
-        budget = await query.first();
-      } catch (queryError) {
-        if (queryError.code !== 101) throw queryError;
-      }
-      
       const fixedAmount = fixAmount(amount);
+      const { data: existing } = await db.collection('WeeklyBudget')
+        .where(withUserCondition({ weekKey }))
+        .limit(1).get();
       
-      if (budget) {
-        budget.set('amount', fixedAmount);
-        setPublicACL(budget);
+      if (existing.length > 0) {
+        await db.collection('WeeklyBudget').doc(existing[0]._id)
+          .update({ amount: fixedAmount, updatedAt: db.serverDate() });
+        return { success: true, data: { id: existing[0]._id, weekKey, amount: fixedAmount, settled: existing[0].settled || false } };
       } else {
-        const WeeklyBudget = AV.Object.extend('WeeklyBudget');
-        budget = new WeeklyBudget();
-        budget.set('weekKey', weekKey);
-        budget.set('amount', fixedAmount);
-        budget.set('settled', false);
-        setUserId(budget); // 设置用户ID
-        setPublicACL(budget);
+        // ✅ 不手动添加 userId，CloudBase 会自动注入 _openid
+        const { id } = await db.collection('WeeklyBudget').add({
+          weekKey, amount: fixedAmount, settled: false, createdAt: db.serverDate()
+        });
+        return { success: true, data: { id, weekKey, amount: fixedAmount, settled: false } };
       }
-      
-      await budget.save(null, { fetchWhenSave: true });
-      
-      log('✅ 保存周预算:', weekKey, fixedAmount);
-      return {
-        success: true,
-        data: {
-          id: budget.id,
-          weekKey: budget.get('weekKey'),
-          amount: fixAmount(budget.get('amount')),
-          settled: budget.get('settled') || false
-        }
-      };
     } catch (error) {
       console.error('保存周预算失败:', error);
       return { success: false, error: error.message };
@@ -139,17 +116,15 @@ export const saveWeeklyBudget = async (weekKey, amount) => {
 export const markWeeklyBudgetSettled = async (weekKey) => {
   return withLock(`markSettled:${weekKey}`, async () => {
     try {
-      const query = new AV.Query('WeeklyBudget');
-      query.equalTo('weekKey', weekKey);
-      addUserFilter(query); // 添加用户过滤
-      const budget = await query.first();
+      const { data } = await db.collection('WeeklyBudget')
+        .where(withUserCondition({ weekKey }))
+        .limit(1).get();
       
-      if (budget) {
-        budget.set('settled', true);
-        await budget.save();
+      if (data.length > 0) {
+        await db.collection('WeeklyBudget').doc(data[0]._id)
+          .update({ settled: true, updatedAt: db.serverDate() });
         return { success: true };
       }
-      
       return { success: false, error: '未找到该周预算' };
     } catch (error) {
       console.error('标记结算失败:', error);
@@ -158,33 +133,22 @@ export const markWeeklyBudgetSettled = async (weekKey) => {
   });
 };
 
-// ==================== 交易记录相关 API ====================
+// ==================== 交易记录 ====================
 
 export const getTransactions = async (weekKey) => {
   try {
-    const query = new AV.Query('Transaction');
-    query.equalTo('weekKey', weekKey);
-    addUserFilter(query); // 添加用户过滤
-    query.descending('createdAt');
+    const { data } = await db.collection('Transaction')
+      .where(withUserCondition({ weekKey }))
+      .orderBy('createdAt', 'desc').get();
     
-    const transactions = await query.find();
-    
-    const transactionData = transactions.map(trans => ({
-      id: trans.id,
-      weekKey: trans.get('weekKey'),
-      date: trans.get('date'),
-      time: trans.get('time'),
-      amount: fixAmount(trans.get('amount')),
-      description: trans.get('description') || '',
-      createdAt: trans.get('createdAt')
-    }));
-    
-    log('✅ 加载交易记录:', transactionData.length, '条');
-    return { success: true, data: transactionData };
+    return {
+      success: true,
+      data: data.map(t => ({
+        id: t._id, weekKey: t.weekKey, date: t.date, time: t.time,
+        amount: fixAmount(t.amount), description: t.description || '', createdAt: t.createdAt
+      }))
+    };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载交易记录失败:', error);
     return { success: false, error: error.message };
   }
@@ -192,33 +156,11 @@ export const getTransactions = async (weekKey) => {
 
 export const createTransaction = async (weekKey, date, time, amount, description) => {
   try {
-    const Transaction = AV.Object.extend('Transaction');
-    const transaction = new Transaction();
-    
-    const fixedAmount = fixAmount(amount);
-    
-    transaction.set('weekKey', weekKey);
-    transaction.set('date', date);
-    transaction.set('time', time);
-    transaction.set('amount', fixedAmount);
-    transaction.set('description', description);
-    setUserId(transaction); // 设置用户ID
-    setPublicACL(transaction);
-    
-    await transaction.save();
-    
-    log('✅ 创建交易记录:', fixedAmount);
-    return {
-      success: true,
-      data: {
-        id: transaction.id,
-        weekKey: transaction.get('weekKey'),
-        date: transaction.get('date'),
-        time: transaction.get('time'),
-        amount: fixAmount(transaction.get('amount')),
-        description: transaction.get('description')
-      }
-    };
+    // ✅ 不手动添加 userId
+    const { id } = await db.collection('Transaction').add({
+      weekKey, date, time, amount: fixAmount(amount), description, createdAt: db.serverDate()
+    });
+    return { success: true, data: { id, weekKey, date, time, amount: fixAmount(amount), description } };
   } catch (error) {
     console.error('创建交易记录失败:', error);
     return { success: false, error: error.message };
@@ -227,28 +169,13 @@ export const createTransaction = async (weekKey, date, time, amount, description
 
 export const updateTransaction = async (transactionId, weekKey, amount, description, date = null) => {
   try {
-    const query = new AV.Query('Transaction');
-    const transaction = await query.get(transactionId);
+    const updateData = { amount: fixAmount(amount), description, updatedAt: db.serverDate() };
+    if (date) updateData.date = date;
+    await db.collection('Transaction').doc(transactionId).update(updateData);
     
-    const fixedAmount = fixAmount(amount);
-    
-    transaction.set('amount', fixedAmount);
-    transaction.set('description', description);
-    if (date) transaction.set('date', date);
-    
-    await transaction.save();
-    
-    return {
-      success: true,
-      data: {
-        id: transaction.id,
-        weekKey: transaction.get('weekKey'),
-        date: transaction.get('date'),
-        time: transaction.get('time'),
-        amount: fixAmount(transaction.get('amount')),
-        description: transaction.get('description')
-      }
-    };
+    const { data } = await db.collection('Transaction').doc(transactionId).get();
+    const t = Array.isArray(data) ? data[0] : data;
+    return { success: true, data: { id: t._id, weekKey: t.weekKey, date: t.date, time: t.time, amount: fixAmount(t.amount), description: t.description } };
   } catch (error) {
     console.error('更新交易记录失败:', error);
     return { success: false, error: error.message };
@@ -257,9 +184,7 @@ export const updateTransaction = async (transactionId, weekKey, amount, descript
 
 export const deleteTransaction = async (transactionId) => {
   try {
-    const query = new AV.Query('Transaction');
-    const transaction = await query.get(transactionId);
-    await transaction.destroy();
+    await db.collection('Transaction').doc(transactionId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除交易记录失败:', error);
@@ -267,30 +192,22 @@ export const deleteTransaction = async (transactionId) => {
   }
 };
 
-// ==================== 固定支出相关 API ====================
+// ==================== 固定支出 ====================
 
 export const getFixedExpenses = async () => {
   try {
-    const query = new AV.Query('FixedExpense');
-    addUserFilter(query); // 添加用户过滤
-    query.ascending('createdAt');
-    const expenses = await query.find();
+    const { data } = await db.collection('FixedExpense')
+      .where(getUserCondition())
+      .orderBy('createdAt', 'asc').get();
     
-    const expenseData = expenses.map(expense => ({
-      id: expense.id,
-      name: expense.get('name'),
-      amount: fixAmount(expense.get('amount')),
-      expireDate: expense.get('expireDate') || '',
-      enabled: expense.get('enabled') !== false,
-      createdAt: expense.get('createdAt')
-    }));
-    
-    log('✅ 加载固定支出:', expenseData.length, '条');
-    return { success: true, data: expenseData };
+    return {
+      success: true,
+      data: data.map(e => ({
+        id: e._id, name: e.name, amount: fixAmount(e.amount),
+        expireDate: e.expireDate || '', enabled: e.enabled !== false, createdAt: e.createdAt
+      }))
+    };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载固定支出失败:', error);
     return { success: false, error: error.message };
   }
@@ -298,28 +215,11 @@ export const getFixedExpenses = async () => {
 
 export const createFixedExpense = async (name, amount, expireDate, enabled = true) => {
   try {
-    const FixedExpense = AV.Object.extend('FixedExpense');
-    const expense = new FixedExpense();
-    
-    expense.set('name', name);
-    expense.set('amount', fixAmount(amount));
-    expense.set('expireDate', expireDate);
-    expense.set('enabled', enabled);
-    setUserId(expense); // 设置用户ID
-    setPublicACL(expense);
-    
-    await expense.save();
-    
-    return {
-      success: true,
-      data: {
-        id: expense.id,
-        name: expense.get('name'),
-        amount: fixAmount(expense.get('amount')),
-        expireDate: expense.get('expireDate'),
-        enabled: expense.get('enabled')
-      }
-    };
+    // ✅ 不手动添加 userId
+    const { id } = await db.collection('FixedExpense').add({
+      name, amount: fixAmount(amount), expireDate, enabled, createdAt: db.serverDate()
+    });
+    return { success: true, data: { id, name, amount: fixAmount(amount), expireDate, enabled } };
   } catch (error) {
     console.error('创建固定支出失败:', error);
     return { success: false, error: error.message };
@@ -328,26 +228,10 @@ export const createFixedExpense = async (name, amount, expireDate, enabled = tru
 
 export const updateFixedExpense = async (expenseId, name, amount, expireDate, enabled) => {
   try {
-    const query = new AV.Query('FixedExpense');
-    const expense = await query.get(expenseId);
-    
-    expense.set('name', name);
-    expense.set('amount', fixAmount(amount));
-    expense.set('expireDate', expireDate);
-    expense.set('enabled', enabled);
-    
-    await expense.save();
-    
-    return {
-      success: true,
-      data: {
-        id: expense.id,
-        name: expense.get('name'),
-        amount: fixAmount(expense.get('amount')),
-        expireDate: expense.get('expireDate'),
-        enabled: expense.get('enabled')
-      }
-    };
+    await db.collection('FixedExpense').doc(expenseId).update({
+      name, amount: fixAmount(amount), expireDate, enabled, updatedAt: db.serverDate()
+    });
+    return { success: true, data: { id: expenseId, name, amount: fixAmount(amount), expireDate, enabled } };
   } catch (error) {
     console.error('更新固定支出失败:', error);
     return { success: false, error: error.message };
@@ -356,9 +240,7 @@ export const updateFixedExpense = async (expenseId, name, amount, expireDate, en
 
 export const deleteFixedExpense = async (expenseId) => {
   try {
-    const query = new AV.Query('FixedExpense');
-    const expense = await query.get(expenseId);
-    await expense.destroy();
+    await db.collection('FixedExpense').doc(expenseId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除固定支出失败:', error);
@@ -366,81 +248,56 @@ export const deleteFixedExpense = async (expenseId) => {
   }
 };
 
-// ==================== 心愿池历史 API ====================
+// ==================== 心愿池历史 ====================
 
 export const getWishPoolHistory = async () => {
   try {
-    const query = new AV.Query('WishPoolHistory');
-    addUserFilter(query); // 添加用户过滤
-    query.descending('settledAt');
-    query.limit(100);
-    const histories = await query.find();
+    const { data } = await db.collection('WishPoolHistory')
+      .where(getUserCondition())
+      .orderBy('settledAt', 'desc').limit(100).get();
     
-    const historyData = histories.map(h => ({
-      id: h.id,
-      weekKey: h.get('weekKey'),
-      budgetAmount: fixAmount(h.get('budgetAmount') || 0),
-      spentAmount: fixAmount(h.get('spentAmount') || 0),
-      savedAmount: fixAmount(h.get('savedAmount') || 0),
-      isDeduction: h.get('isDeduction') === true,
-      wishName: h.get('wishName') || '',
-      wishId: h.get('wishId') || '',
-      settledAt: h.get('settledAt'),
-      createdAt: h.get('createdAt')
-    }));
-    
-    log('✅ 加载积攒历史:', historyData.length, '条');
-    return { success: true, data: historyData };
+    return {
+      success: true,
+      data: data.map(h => ({
+        id: h._id, weekKey: h.weekKey,
+        budgetAmount: fixAmount(h.budgetAmount || 0),
+        spentAmount: fixAmount(h.spentAmount || 0),
+        savedAmount: fixAmount(h.savedAmount || 0),
+        isDeduction: h.isDeduction === true,
+        wishName: h.wishName || '', wishId: h.wishId || '',
+        settledAt: h.settledAt, createdAt: h.createdAt
+      }))
+    };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载积攒历史失败:', error);
     return { success: false, error: error.message };
   }
 };
 
-// ==================== 心愿池相关 API ====================
+// ==================== 心愿池 ====================
 
 export const getWishPool = async () => {
   try {
     const historyResult = await getWishPoolHistory();
-    if (!historyResult.success) {
-      return { success: true, data: { amount: 0 } };
-    }
-    
-    const totalAmount = historyResult.data.reduce((sum, h) => sum + (h.savedAmount || 0), 0);
-    const fixedTotal = fixAmount(totalAmount);
-    
-    log('✅ 心愿池余额:', fixedTotal);
-    return { success: true, data: { amount: fixedTotal } };
+    if (!historyResult.success) return { success: true, data: { amount: 0 } };
+    const total = historyResult.data.reduce((sum, h) => sum + (h.savedAmount || 0), 0);
+    return { success: true, data: { amount: fixAmount(total) } };
   } catch (error) {
     console.error('计算心愿池余额失败:', error);
     return { success: false, error: error.message };
   }
 };
 
-export const updateWishPool = async (amount) => {
-  return { success: true, data: { amount: fixAmount(amount) } };
-};
-
-export const addToWishPool = async (addAmount) => {
-  return { success: true, data: { amount: fixAmount(addAmount) } };
-};
+export const updateWishPool = async (amount) => ({ success: true, data: { amount: fixAmount(amount) } });
+export const addToWishPool = async (addAmount) => ({ success: true, data: { amount: fixAmount(addAmount) } });
 
 export const checkWeekSettled = async (weekKey) => {
   try {
-    const query = new AV.Query('WishPoolHistory');
-    query.equalTo('weekKey', weekKey);
-    query.notEqualTo('isDeduction', true);
-    addUserFilter(query); // 添加用户过滤
-    const result = await query.first();
-    
-    return { success: true, settled: !!result };
+    const { data } = await db.collection('WishPoolHistory')
+      .where(withUserCondition({ weekKey, isDeduction: _.neq(true) }))
+      .limit(1).get();
+    return { success: true, settled: data.length > 0 };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, settled: false };
-    }
     console.error('检查结算状态失败:', error);
     return { success: false, error: error.message };
   }
@@ -450,54 +307,19 @@ export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, 
   return withLock(`createHistory:${getCurrentUserId()}:${weekKey}`, async () => {
     try {
       if (!isDeduction) {
-        try {
-          const checkQuery = new AV.Query('WishPoolHistory');
-          checkQuery.equalTo('weekKey', weekKey);
-          checkQuery.notEqualTo('isDeduction', true);
-          addUserFilter(checkQuery); // 添加用户过滤
-          const existing = await checkQuery.first();
-          
-          if (existing) {
-            return {
-              success: true,
-              isNew: false,
-              data: {
-                id: existing.id,
-                weekKey: existing.get('weekKey'),
-                savedAmount: fixAmount(existing.get('savedAmount'))
-              }
-            };
-          }
-        } catch (queryError) {
-          if (queryError.code !== 101) throw queryError;
+        const { data: existing } = await db.collection('WishPoolHistory')
+          .where(withUserCondition({ weekKey, isDeduction: _.neq(true) }))
+          .limit(1).get();
+        if (existing.length > 0) {
+          return { success: true, isNew: false, data: { id: existing[0]._id, weekKey: existing[0].weekKey, savedAmount: fixAmount(existing[0].savedAmount) } };
         }
       }
-      
-      const WishPoolHistory = AV.Object.extend('WishPoolHistory');
-      const history = new WishPoolHistory();
-      
-      history.set('weekKey', weekKey);
-      history.set('budgetAmount', fixAmount(budgetAmount));
-      history.set('spentAmount', fixAmount(spentAmount));
-      history.set('savedAmount', fixAmount(savedAmount));
-      history.set('isDeduction', isDeduction);
-      history.set('wishName', wishName);
-      history.set('wishId', wishId);
-      history.set('settledAt', new Date());
-      setUserId(history); // 设置用户ID
-      setPublicACL(history);
-      
-      await history.save();
-      
-      return {
-        success: true,
-        isNew: true,
-        data: {
-          id: history.id,
-          weekKey: history.get('weekKey'),
-          savedAmount: fixAmount(history.get('savedAmount'))
-        }
-      };
+      // ✅ 不手动添加 userId
+      const { id } = await db.collection('WishPoolHistory').add({
+        weekKey, budgetAmount: fixAmount(budgetAmount), spentAmount: fixAmount(spentAmount), savedAmount: fixAmount(savedAmount),
+        isDeduction, wishName, wishId, settledAt: db.serverDate(), createdAt: db.serverDate()
+      });
+      return { success: true, isNew: true, data: { id, weekKey, savedAmount: fixAmount(savedAmount) } };
     } catch (error) {
       console.error('创建积攒历史失败:', error);
       return { success: false, error: error.message };
@@ -507,9 +329,7 @@ export const createWishPoolHistory = async (weekKey, budgetAmount, spentAmount, 
 
 export const deleteWishPoolHistory = async (historyId) => {
   try {
-    const query = new AV.Query('WishPoolHistory');
-    const history = await query.get(historyId);
-    await history.destroy();
+    await db.collection('WishPoolHistory').doc(historyId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除心愿池历史失败:', error);
@@ -517,31 +337,44 @@ export const deleteWishPoolHistory = async (historyId) => {
   }
 };
 
-// ==================== 愿望清单相关 API ====================
+// ==================== 愿望清单 ====================
 
 export const getWishes = async () => {
   try {
-    const query = new AV.Query('Wish');
-    addUserFilter(query); // 添加用户过滤
-    query.ascending('createdAt');
-    const wishes = await query.find();
+    const { data } = await db.collection('Wish')
+      .where(getUserCondition())
+      .orderBy('createdAt', 'asc').get();
     
-    const wishData = wishes.map(wish => ({
-      id: wish.id,
-      description: wish.get('description'),
-      amount: fixAmount(wish.get('amount')),
-      image: wish.get('image') || null,
-      icon: wish.get('icon') || 'star',
-      fulfilled: wish.get('fulfilled') || false,
-      createdAt: wish.get('createdAt')
-    }));
+    // ✅ 收集所有需要转换的 fileID (cloud:// 格式)
+    const fileIds = data
+      .filter(w => w.image && w.image.startsWith('cloud://'))
+      .map(w => w.image);
     
-    log('✅ 加载愿望清单:', wishData.length, '个');
-    return { success: true, data: wishData };
+    // ✅ 批量转换 fileID 为临时URL
+    const urlMap = await convertFileIdsToUrls(fileIds);
+    
+    return {
+      success: true,
+      data: data.map(w => {
+        let imageUrl = w.image || null;
+        
+        // 如果是 cloud:// 格式，转换为临时URL
+        if (imageUrl && imageUrl.startsWith('cloud://')) {
+          imageUrl = urlMap[imageUrl] || imageUrl;
+        }
+        
+        return {
+          id: w._id, 
+          description: w.description, 
+          amount: fixAmount(w.amount),
+          image: imageUrl,  // ✅ 返回可访问的URL
+          icon: w.icon || 'star', 
+          fulfilled: w.fulfilled || false, 
+          createdAt: w.createdAt
+        };
+      })
+    };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载愿望清单失败:', error);
     return { success: false, error: error.message };
   }
@@ -549,31 +382,19 @@ export const getWishes = async () => {
 
 export const createWish = async (description, amount, image, fulfilled = false, icon = 'star') => {
   try {
-    const Wish = AV.Object.extend('Wish');
-    const wish = new Wish();
+    // ✅ 不手动添加 userId
+    const wishData = { description, amount: fixAmount(amount), fulfilled, icon: icon || 'star', createdAt: db.serverDate() };
+    if (image) wishData.image = image;  // 保存 fileID
+    const { id } = await db.collection('Wish').add(wishData);
     
-    wish.set('description', description);
-    wish.set('amount', fixAmount(amount));
-    wish.set('fulfilled', fulfilled);
-    wish.set('icon', icon || 'star');
-    if (image) wish.set('image', image);
-    else wish.unset('image');
-    setUserId(wish); // 设置用户ID
-    setPublicACL(wish);
+    // 如果有图片，转换URL返回
+    let imageUrl = image;
+    if (image && image.startsWith('cloud://')) {
+      const urlMap = await convertFileIdsToUrls([image]);
+      imageUrl = urlMap[image] || image;
+    }
     
-    await wish.save();
-    
-    return {
-      success: true,
-      data: {
-        id: wish.id,
-        description: wish.get('description'),
-        amount: fixAmount(wish.get('amount')),
-        image: wish.get('image') || null,
-        icon: wish.get('icon') || 'star',
-        fulfilled: wish.get('fulfilled')
-      }
-    };
+    return { success: true, data: { id, description, amount: fixAmount(amount), image: imageUrl, icon: icon || 'star', fulfilled } };
   } catch (error) {
     console.error('创建愿望失败:', error);
     return { success: false, error: error.message };
@@ -582,29 +403,18 @@ export const createWish = async (description, amount, image, fulfilled = false, 
 
 export const updateWish = async (wishId, description, amount, image, fulfilled = false, icon = 'star') => {
   try {
-    const query = new AV.Query('Wish');
-    const wish = await query.get(wishId);
+    const updateData = { description, amount: fixAmount(amount), fulfilled, icon: icon || 'star', updatedAt: db.serverDate() };
+    updateData.image = image ? image : _.remove();  // 保存 fileID 或删除
+    await db.collection('Wish').doc(wishId).update(updateData);
     
-    wish.set('description', description);
-    wish.set('amount', fixAmount(amount));
-    wish.set('fulfilled', fulfilled);
-    wish.set('icon', icon || 'star');
-    if (image) wish.set('image', image);
-    else wish.unset('image');
+    // 如果有图片，转换URL返回
+    let imageUrl = image;
+    if (image && image.startsWith('cloud://')) {
+      const urlMap = await convertFileIdsToUrls([image]);
+      imageUrl = urlMap[image] || image;
+    }
     
-    await wish.save();
-    
-    return {
-      success: true,
-      data: {
-        id: wish.id,
-        description: wish.get('description'),
-        amount: fixAmount(wish.get('amount')),
-        image: wish.get('image') || null,
-        icon: wish.get('icon') || 'star',
-        fulfilled: wish.get('fulfilled')
-      }
-    };
+    return { success: true, data: { id: wishId, description, amount: fixAmount(amount), image: imageUrl, icon: icon || 'star', fulfilled } };
   } catch (error) {
     console.error('更新愿望失败:', error);
     return { success: false, error: error.message };
@@ -613,9 +423,7 @@ export const updateWish = async (wishId, description, amount, image, fulfilled =
 
 export const deleteWish = async (wishId) => {
   try {
-    const query = new AV.Query('Wish');
-    const wish = await query.get(wishId);
-    await wish.destroy();
+    await db.collection('Wish').doc(wishId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除愿望失败:', error);
@@ -623,35 +431,23 @@ export const deleteWish = async (wishId) => {
   }
 };
 
-// ==================== 专项预算相关 API ====================
+// ==================== 专项预算 ====================
 
 export const getSpecialBudgets = async () => {
   try {
-    const query = new AV.Query('SpecialBudget');
-    addUserFilter(query); // 添加用户过滤
-    query.descending('createdAt');
-    const budgets = await query.find();
+    const { data } = await db.collection('SpecialBudget')
+      .where(getUserCondition())
+      .orderBy('createdAt', 'desc').get();
     
-    const budgetData = budgets.map(budget => ({
-      id: budget.id,
-      name: budget.get('name'),
-      icon: budget.get('icon') || 'travel',
-      totalBudget: fixAmount(budget.get('totalBudget') || 0),
-      startDate: budget.get('startDate') || '',
-      endDate: budget.get('endDate') || '',
-      pinnedToHome: budget.get('pinnedToHome') || false,
-      iconOffsetX: budget.get('iconOffsetX') || 0,
-      iconOffsetY: budget.get('iconOffsetY') || 0,
-      iconScale: budget.get('iconScale') || 1,
-      createdAt: budget.get('createdAt')
-    }));
-    
-    log('✅ 加载专项预算:', budgetData.length, '个');
-    return { success: true, data: budgetData };
+    return {
+      success: true,
+      data: data.map(b => ({
+        id: b._id, name: b.name, icon: b.icon || 'travel', totalBudget: fixAmount(b.totalBudget || 0),
+        startDate: b.startDate || '', endDate: b.endDate || '', pinnedToHome: b.pinnedToHome || false,
+        iconOffsetX: b.iconOffsetX || 0, iconOffsetY: b.iconOffsetY || 0, iconScale: b.iconScale || 1, createdAt: b.createdAt
+      }))
+    };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载专项预算失败:', error);
     return { success: false, error: error.message };
   }
@@ -659,38 +455,12 @@ export const getSpecialBudgets = async () => {
 
 export const createSpecialBudget = async (name, icon, totalBudget, startDate, endDate, pinnedToHome = false) => {
   try {
-    const SpecialBudget = AV.Object.extend('SpecialBudget');
-    const budget = new SpecialBudget();
-    
-    budget.set('name', name);
-    budget.set('icon', icon);
-    budget.set('totalBudget', fixAmount(totalBudget));
-    budget.set('startDate', startDate);
-    budget.set('endDate', endDate);
-    budget.set('pinnedToHome', pinnedToHome);
-    budget.set('iconOffsetX', 0);
-    budget.set('iconOffsetY', 0);
-    budget.set('iconScale', 1);
-    setUserId(budget); // 设置用户ID
-    setPublicACL(budget);
-    
-    await budget.save();
-    
-    return {
-      success: true,
-      data: {
-        id: budget.id,
-        name: budget.get('name'),
-        icon: budget.get('icon'),
-        totalBudget: fixAmount(budget.get('totalBudget')),
-        startDate: budget.get('startDate'),
-        endDate: budget.get('endDate'),
-        pinnedToHome: budget.get('pinnedToHome'),
-        iconOffsetX: budget.get('iconOffsetX') || 0,
-        iconOffsetY: budget.get('iconOffsetY') || 0,
-        iconScale: budget.get('iconScale') || 1
-      }
-    };
+    // ✅ 不手动添加 userId
+    const { id } = await db.collection('SpecialBudget').add({
+      name, icon, totalBudget: fixAmount(totalBudget), startDate, endDate, pinnedToHome,
+      iconOffsetX: 0, iconOffsetY: 0, iconScale: 1, createdAt: db.serverDate()
+    });
+    return { success: true, data: { id, name, icon, totalBudget: fixAmount(totalBudget), startDate, endDate, pinnedToHome, iconOffsetX: 0, iconOffsetY: 0, iconScale: 1 } };
   } catch (error) {
     console.error('创建专项预算失败:', error);
     return { success: false, error: error.message };
@@ -699,33 +469,12 @@ export const createSpecialBudget = async (name, icon, totalBudget, startDate, en
 
 export const updateSpecialBudget = async (budgetId, name, icon, totalBudget, startDate, endDate, pinnedToHome) => {
   try {
-    const query = new AV.Query('SpecialBudget');
-    const budget = await query.get(budgetId);
-    
-    budget.set('name', name);
-    budget.set('icon', icon);
-    budget.set('totalBudget', fixAmount(totalBudget));
-    budget.set('startDate', startDate);
-    budget.set('endDate', endDate);
-    budget.set('pinnedToHome', pinnedToHome);
-    
-    await budget.save();
-    
-    return {
-      success: true,
-      data: {
-        id: budget.id,
-        name: budget.get('name'),
-        icon: budget.get('icon'),
-        totalBudget: fixAmount(budget.get('totalBudget')),
-        startDate: budget.get('startDate'),
-        endDate: budget.get('endDate'),
-        pinnedToHome: budget.get('pinnedToHome'),
-        iconOffsetX: budget.get('iconOffsetX') || 0,
-        iconOffsetY: budget.get('iconOffsetY') || 0,
-        iconScale: budget.get('iconScale') || 1
-      }
-    };
+    await db.collection('SpecialBudget').doc(budgetId).update({
+      name, icon, totalBudget: fixAmount(totalBudget), startDate, endDate, pinnedToHome, updatedAt: db.serverDate()
+    });
+    const { data } = await db.collection('SpecialBudget').doc(budgetId).get();
+    const b = Array.isArray(data) ? data[0] : data;
+    return { success: true, data: { id: b._id, name: b.name, icon: b.icon, totalBudget: fixAmount(b.totalBudget), startDate: b.startDate, endDate: b.endDate, pinnedToHome: b.pinnedToHome, iconOffsetX: b.iconOffsetX || 0, iconOffsetY: b.iconOffsetY || 0, iconScale: b.iconScale || 1 } };
   } catch (error) {
     console.error('更新专项预算失败:', error);
     return { success: false, error: error.message };
@@ -734,25 +483,8 @@ export const updateSpecialBudget = async (budgetId, name, icon, totalBudget, sta
 
 export const updateSpecialBudgetIconPosition = async (budgetId, offsetX, offsetY, scale) => {
   try {
-    const query = new AV.Query('SpecialBudget');
-    const budget = await query.get(budgetId);
-    
-    budget.set('iconOffsetX', offsetX);
-    budget.set('iconOffsetY', offsetY);
-    budget.set('iconScale', scale);
-    
-    await budget.save();
-    
-    log('✅ 更新图标位置:', budgetId, offsetX, offsetY, scale);
-    return {
-      success: true,
-      data: {
-        id: budget.id,
-        iconOffsetX: budget.get('iconOffsetX'),
-        iconOffsetY: budget.get('iconOffsetY'),
-        iconScale: budget.get('iconScale')
-      }
-    };
+    await db.collection('SpecialBudget').doc(budgetId).update({ iconOffsetX: offsetX, iconOffsetY: offsetY, iconScale: scale, updatedAt: db.serverDate() });
+    return { success: true, data: { id: budgetId, iconOffsetX: offsetX, iconOffsetY: offsetY, iconScale: scale } };
   } catch (error) {
     console.error('更新图标位置失败:', error);
     return { success: false, error: error.message };
@@ -761,40 +493,14 @@ export const updateSpecialBudgetIconPosition = async (budgetId, offsetX, offsetY
 
 export const deleteSpecialBudget = async (budgetId) => {
   try {
-    // 先删除所有子项的消费记录
-    try {
-      const itemQuery = new AV.Query('SpecialBudgetItem');
-      itemQuery.equalTo('budgetId', budgetId);
-      addUserFilter(itemQuery); // 添加用户过滤
-      const items = await itemQuery.find();
-      
-      for (const item of items) {
-        // 删除每个子项的消费记录
-        try {
-          const transQuery = new AV.Query('SpecialBudgetTransaction');
-          transQuery.equalTo('itemId', item.id);
-          const transactions = await transQuery.find();
-          if (transactions.length > 0) {
-            await AV.Object.destroyAll(transactions);
-          }
-        } catch (transError) {
-          if (transError.code !== 101) throw transError;
-        }
-      }
-      
-      // 删除所有子项
-      if (items.length > 0) {
-        await AV.Object.destroyAll(items);
-      }
-    } catch (itemError) {
-      if (itemError.code !== 101) throw itemError;
+    const { data: items } = await db.collection('SpecialBudgetItem')
+      .where(withUserCondition({ budgetId })).get();
+    for (const item of items) {
+      const { data: trans } = await db.collection('SpecialBudgetTransaction').where({ itemId: item._id }).get();
+      for (const t of trans) await db.collection('SpecialBudgetTransaction').doc(t._id).remove();
+      await db.collection('SpecialBudgetItem').doc(item._id).remove();
     }
-    
-    // 最后删除预算本身
-    const query = new AV.Query('SpecialBudget');
-    const budget = await query.get(budgetId);
-    await budget.destroy();
-    
+    await db.collection('SpecialBudget').doc(budgetId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除专项预算失败:', error);
@@ -802,31 +508,15 @@ export const deleteSpecialBudget = async (budgetId) => {
   }
 };
 
-// ==================== 专项预算子项 API ====================
+// ==================== 专项预算子项 ====================
 
 export const getSpecialBudgetItems = async (budgetId) => {
   try {
-    const query = new AV.Query('SpecialBudgetItem');
-    query.equalTo('budgetId', budgetId);
-    addUserFilter(query); // 添加用户过滤
-    query.ascending('createdAt');
-    const items = await query.find();
-    
-    const itemData = items.map(item => ({
-      id: item.id,
-      budgetId: item.get('budgetId'),
-      name: item.get('name'),
-      budgetAmount: fixAmount(item.get('budgetAmount') || 0),
-      actualAmount: fixAmount(item.get('actualAmount') || 0),
-      createdAt: item.get('createdAt')
-    }));
-    
-    log('✅ 加载专项预算子项:', itemData.length, '个');
-    return { success: true, data: itemData };
+    const { data } = await db.collection('SpecialBudgetItem')
+      .where(withUserCondition({ budgetId }))
+      .orderBy('createdAt', 'asc').get();
+    return { success: true, data: data.map(i => ({ id: i._id, budgetId: i.budgetId, name: i.name, budgetAmount: fixAmount(i.budgetAmount || 0), actualAmount: fixAmount(i.actualAmount || 0), createdAt: i.createdAt })) };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载专项预算子项失败:', error);
     return { success: false, error: error.message };
   }
@@ -834,28 +524,11 @@ export const getSpecialBudgetItems = async (budgetId) => {
 
 export const createSpecialBudgetItem = async (budgetId, name, budgetAmount, actualAmount = 0) => {
   try {
-    const SpecialBudgetItem = AV.Object.extend('SpecialBudgetItem');
-    const item = new SpecialBudgetItem();
-    
-    item.set('budgetId', budgetId);
-    item.set('name', name);
-    item.set('budgetAmount', fixAmount(budgetAmount));
-    item.set('actualAmount', fixAmount(actualAmount));
-    setUserId(item); // 设置用户ID
-    setPublicACL(item);
-    
-    await item.save();
-    
-    return {
-      success: true,
-      data: {
-        id: item.id,
-        budgetId: item.get('budgetId'),
-        name: item.get('name'),
-        budgetAmount: fixAmount(item.get('budgetAmount')),
-        actualAmount: fixAmount(item.get('actualAmount'))
-      }
-    };
+    // ✅ 不手动添加 userId
+    const { id } = await db.collection('SpecialBudgetItem').add({ 
+      budgetId, name, budgetAmount: fixAmount(budgetAmount), actualAmount: fixAmount(actualAmount), createdAt: db.serverDate() 
+    });
+    return { success: true, data: { id, budgetId, name, budgetAmount: fixAmount(budgetAmount), actualAmount: fixAmount(actualAmount) } };
   } catch (error) {
     console.error('创建专项预算子项失败:', error);
     return { success: false, error: error.message };
@@ -864,25 +537,10 @@ export const createSpecialBudgetItem = async (budgetId, name, budgetAmount, actu
 
 export const updateSpecialBudgetItem = async (itemId, name, budgetAmount, actualAmount) => {
   try {
-    const query = new AV.Query('SpecialBudgetItem');
-    const item = await query.get(itemId);
-    
-    item.set('name', name);
-    item.set('budgetAmount', fixAmount(budgetAmount));
-    item.set('actualAmount', fixAmount(actualAmount));
-    
-    await item.save();
-    
-    return {
-      success: true,
-      data: {
-        id: item.id,
-        budgetId: item.get('budgetId'),
-        name: item.get('name'),
-        budgetAmount: fixAmount(item.get('budgetAmount')),
-        actualAmount: fixAmount(item.get('actualAmount'))
-      }
-    };
+    await db.collection('SpecialBudgetItem').doc(itemId).update({ name, budgetAmount: fixAmount(budgetAmount), actualAmount: fixAmount(actualAmount), updatedAt: db.serverDate() });
+    const { data } = await db.collection('SpecialBudgetItem').doc(itemId).get();
+    const i = Array.isArray(data) ? data[0] : data;
+    return { success: true, data: { id: i._id, budgetId: i.budgetId, name: i.name, budgetAmount: fixAmount(i.budgetAmount), actualAmount: fixAmount(i.actualAmount) } };
   } catch (error) {
     console.error('更新专项预算子项失败:', error);
     return { success: false, error: error.message };
@@ -891,23 +549,10 @@ export const updateSpecialBudgetItem = async (itemId, name, budgetAmount, actual
 
 export const deleteSpecialBudgetItem = async (itemId) => {
   try {
-    // 先删除该子项的所有消费记录
-    try {
-      const transQuery = new AV.Query('SpecialBudgetTransaction');
-      transQuery.equalTo('itemId', itemId);
-      addUserFilter(transQuery); // 添加用户过滤
-      const transactions = await transQuery.find();
-      if (transactions.length > 0) {
-        await AV.Object.destroyAll(transactions);
-      }
-    } catch (transError) {
-      if (transError.code !== 101) throw transError;
-    }
-    
-    // 再删除子项本身
-    const query = new AV.Query('SpecialBudgetItem');
-    const item = await query.get(itemId);
-    await item.destroy();
+    const { data: trans } = await db.collection('SpecialBudgetTransaction')
+      .where(withUserCondition({ itemId })).get();
+    for (const t of trans) await db.collection('SpecialBudgetTransaction').doc(t._id).remove();
+    await db.collection('SpecialBudgetItem').doc(itemId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除专项预算子项失败:', error);
@@ -915,32 +560,15 @@ export const deleteSpecialBudgetItem = async (itemId) => {
   }
 };
 
-// ==================== 专项预算消费记录 API ====================
+// ==================== 专项预算消费记录 ====================
 
 export const getSpecialBudgetTransactions = async (itemId) => {
   try {
-    const query = new AV.Query('SpecialBudgetTransaction');
-    query.equalTo('itemId', itemId);
-    addUserFilter(query); // 添加用户过滤
-    query.descending('date');
-    query.descending('createdAt');
-    const transactions = await query.find();
-    
-    const transactionData = transactions.map(t => ({
-      id: t.id,
-      itemId: t.get('itemId'),
-      amount: fixAmount(t.get('amount') || 0),
-      description: t.get('description') || '',
-      date: t.get('date') || '',
-      createdAt: t.get('createdAt')
-    }));
-    
-    log('✅ 加载消费记录:', transactionData.length, '条');
-    return { success: true, data: transactionData };
+    const { data } = await db.collection('SpecialBudgetTransaction')
+      .where(withUserCondition({ itemId }))
+      .orderBy('date', 'desc').orderBy('createdAt', 'desc').get();
+    return { success: true, data: data.map(t => ({ id: t._id, itemId: t.itemId, amount: fixAmount(t.amount || 0), description: t.description || '', date: t.date || '', createdAt: t.createdAt })) };
   } catch (error) {
-    if (error.code === 101) {
-      return { success: true, data: [] };
-    }
     console.error('加载消费记录失败:', error);
     return { success: false, error: error.message };
   }
@@ -948,29 +576,11 @@ export const getSpecialBudgetTransactions = async (itemId) => {
 
 export const createSpecialBudgetTransaction = async (itemId, amount, description, date) => {
   try {
-    const SpecialBudgetTransaction = AV.Object.extend('SpecialBudgetTransaction');
-    const transaction = new SpecialBudgetTransaction();
-    
-    transaction.set('itemId', itemId);
-    transaction.set('amount', fixAmount(amount));
-    transaction.set('description', description || '');
-    transaction.set('date', date);
-    setUserId(transaction); // 设置用户ID
-    setPublicACL(transaction);
-    
-    await transaction.save();
-    
-    log('✅ 创建消费记录:', amount);
-    return {
-      success: true,
-      data: {
-        id: transaction.id,
-        itemId: transaction.get('itemId'),
-        amount: fixAmount(transaction.get('amount')),
-        description: transaction.get('description'),
-        date: transaction.get('date')
-      }
-    };
+    // ✅ 不手动添加 userId
+    const { id } = await db.collection('SpecialBudgetTransaction').add({ 
+      itemId, amount: fixAmount(amount), description: description || '', date, createdAt: db.serverDate() 
+    });
+    return { success: true, data: { id, itemId, amount: fixAmount(amount), description, date } };
   } catch (error) {
     console.error('创建消费记录失败:', error);
     return { success: false, error: error.message };
@@ -979,25 +589,10 @@ export const createSpecialBudgetTransaction = async (itemId, amount, description
 
 export const updateSpecialBudgetTransaction = async (transactionId, amount, description, date) => {
   try {
-    const query = new AV.Query('SpecialBudgetTransaction');
-    const transaction = await query.get(transactionId);
-    
-    transaction.set('amount', fixAmount(amount));
-    transaction.set('description', description || '');
-    transaction.set('date', date);
-    
-    await transaction.save();
-    
-    return {
-      success: true,
-      data: {
-        id: transaction.id,
-        itemId: transaction.get('itemId'),
-        amount: fixAmount(transaction.get('amount')),
-        description: transaction.get('description'),
-        date: transaction.get('date')
-      }
-    };
+    await db.collection('SpecialBudgetTransaction').doc(transactionId).update({ amount: fixAmount(amount), description: description || '', date, updatedAt: db.serverDate() });
+    const { data } = await db.collection('SpecialBudgetTransaction').doc(transactionId).get();
+    const t = Array.isArray(data) ? data[0] : data;
+    return { success: true, data: { id: t._id, itemId: t.itemId, amount: fixAmount(t.amount), description: t.description, date: t.date } };
   } catch (error) {
     console.error('更新消费记录失败:', error);
     return { success: false, error: error.message };
@@ -1006,9 +601,7 @@ export const updateSpecialBudgetTransaction = async (transactionId, amount, desc
 
 export const deleteSpecialBudgetTransaction = async (transactionId) => {
   try {
-    const query = new AV.Query('SpecialBudgetTransaction');
-    const transaction = await query.get(transactionId);
-    await transaction.destroy();
+    await db.collection('SpecialBudgetTransaction').doc(transactionId).remove();
     return { success: true };
   } catch (error) {
     console.error('删除消费记录失败:', error);
@@ -1016,7 +609,6 @@ export const deleteSpecialBudgetTransaction = async (transactionId) => {
   }
 };
 
-// 获取明细的实际消费总额（通过消费记录汇总）
 export const getSpecialBudgetItemActualAmount = async (itemId) => {
   try {
     const result = await getSpecialBudgetTransactions(itemId);
@@ -1031,66 +623,11 @@ export const getSpecialBudgetItemActualAmount = async (itemId) => {
   }
 };
 
-// ===== 【新增】Keepalive 删除函数（夸克浏览器兼容） =====
-// 这些函数使用原生 fetch + keepalive，确保请求在页面关闭后仍能完成
+// ===== Keepalive 删除函数 =====
 
-const LEANCLOUD_CONFIG = {
-  serverURL: 'https://ru9hllk7.lc-cn-n1-shared.com',
-  appId: 'ru9hllk7z3E44kqC2n9plsmS-gzGzoHsz',
-  appKey: 'nmVXjDyJqBMGCI9V8KwWXh2V'
-};
-
-const deleteWithKeepAlive = (className, objectId) => {
-  const currentUser = AV.User.current();
-  if (!currentUser) {
-    console.warn('未登录，跳过删除');
-    return;
-  }
-  
-  const headers = {
-    'X-LC-Id': LEANCLOUD_CONFIG.appId,
-    'X-LC-Key': LEANCLOUD_CONFIG.appKey,
-    'X-LC-Session': currentUser.getSessionToken(),
-    'Content-Type': 'application/json'
-  };
-  
-  fetch(`${LEANCLOUD_CONFIG.serverURL}/1.1/classes/${className}/${objectId}`, {
-    method: 'DELETE',
-    keepalive: true,
-    headers
-  }).then(() => {
-    console.log(`✅ ${className} 删除成功`);
-  }).catch(err => {
-    console.warn(`${className} 删除请求:`, err.message);
-  });
-};
-
-// 删除消费记录
-export const deleteTransactionWithKeepAlive = (id) => {
-  deleteWithKeepAlive('Transaction', id);
-};
-
-// 删除心愿
-export const deleteWishWithKeepAlive = (id) => {
-  deleteWithKeepAlive('Wish', id);
-};
-
-// 删除固定支出
-export const deleteFixedExpenseWithKeepAlive = (id) => {
-  deleteWithKeepAlive('FixedExpense', id);
-};
-
-// 删除专项预算
-export const deleteSpecialBudgetWithKeepAlive = (id) => {
-  deleteWithKeepAlive('SpecialBudget', id);
-};
-
-// 删除专项预算明细
-export const deleteSpecialBudgetItemWithKeepAlive = (id) => {
-  deleteWithKeepAlive('SpecialBudgetItem', id);
-};
-
-// 删除专项预算消费记录
-export const deleteSpecialBudgetTransactionWithKeepAlive = (id) => {
-  deleteWithKeepAlive('SpecialBudgetTransaction', id);
-};
+export const deleteTransactionWithKeepAlive = (id) => deleteTransaction(id).catch(err => console.warn('删除失败:', err));
+export const deleteWishWithKeepAlive = (id) => deleteWish(id).catch(err => console.warn('删除失败:', err));
+export const deleteFixedExpenseWithKeepAlive = (id) => deleteFixedExpense(id).catch(err => console.warn('删除失败:', err));
+export const deleteSpecialBudgetWithKeepAlive = (id) => deleteSpecialBudget(id).catch(err => console.warn('删除失败:', err));
+export const deleteSpecialBudgetItemWithKeepAlive = (id) => deleteSpecialBudgetItem(id).catch(err => console.warn('删除失败:', err));
+export const deleteSpecialBudgetTransactionWithKeepAlive = (id) => deleteSpecialBudgetTransaction(id).catch(err => console.warn('删除失败:', err));

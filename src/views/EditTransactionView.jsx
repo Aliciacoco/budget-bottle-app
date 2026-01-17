@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { updateTransaction, deleteTransaction } from '../api';
+import { updateTransaction, deleteTransaction } from '../apiSelector';
 import Calculator from '../components/CalculatorModal';
 
 import { 

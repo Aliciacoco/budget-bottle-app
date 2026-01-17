@@ -7,7 +7,7 @@ import { getFloatingIcon } from '../constants/floatingIcons';
 import { 
   getSpecialBudgetItems, 
   deleteSpecialBudget
-} from '../api';
+} from '../apiSelector';
 
 // 导入设计系统组件
 import { 

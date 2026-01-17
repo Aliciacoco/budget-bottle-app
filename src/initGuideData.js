@@ -1,65 +1,75 @@
 // initGuideData.js - 新用户引导数据初始化
-// 修复：不初始化周预算，让用户自己设置
+// ✅ 支持：正式账号用 username，游客用 uid
 
 import { getWeekInfo } from './utils/helpers';
 
 const INIT_FLAG_PREFIX = 'budget_initialized_';
 const initializingUsers = new Set();
 
-export const isUserInitialized = (username) => {
-  return localStorage.getItem(INIT_FLAG_PREFIX + username) === 'true';
+export const isUserInitialized = (userKey) => {
+  return localStorage.getItem(INIT_FLAG_PREFIX + userKey) === 'true';
 };
 
-export const markUserInitialized = (username) => {
-  localStorage.setItem(INIT_FLAG_PREFIX + username, 'true');
+export const markUserInitialized = (userKey) => {
+  localStorage.setItem(INIT_FLAG_PREFIX + userKey, 'true');
+};
+
+export const resetUserInitFlag = (userKey) => {
+  localStorage.removeItem(INIT_FLAG_PREFIX + userKey);
 };
 
 // ==================== 引导数据模板 ====================
 
 const GUIDE_WISHES = [
-  { description: 'AirPods Pro 🎧（示例）', amount: 1899, icon: 'star' },
+  { description: 'AirPods Pro 🎧(示例)', amount: 1899, icon: 'star' },
 ];
 
 const GUIDE_SPECIAL_BUDGETS = [
   {
-    name: '云南旅游（示例）',
+    name: '云南旅游(示例)',
     icon: 'travel',
     totalBudget: 5000,
     startDate: '',
     endDate: '',
-    pinnedToHome: true,
+    pinnedToHome: false,
     items: [
-      { name: '交通费用（示例）', budgetAmount: 1500, actualAmount: 0 },
+      { name: '交通费用(示例)', budgetAmount: 1500, actualAmount: 0 },
     ]
   }
 ];
 
 const GUIDE_FIXED_EXPENSES = [
-  { name: '房租（示例）', amount: 2000, enabled: true },
+  { name: '房租(示例)', amount: 2000, enabled: true },
 ];
 
 // ==================== 初始化函数 ====================
 
-export const initGuideDataForUser = async (api, username) => {
-  if (isUserInitialized(username)) {
-    console.log('用户已初始化，跳过:', username);
+/**
+ * 为用户初始化引导数据
+ * @param {Object} api - API 对象（cloudApi 或 guestApi）
+ * @param {string} userKey - 用户标识（正式账号用 username，游客用 uid）
+ */
+export const initGuideDataForUser = async (api, userKey) => {
+  if (isUserInitialized(userKey)) {
+    console.log('用户已初始化,跳过:', userKey);
     return { success: true, skipped: true };
   }
   
-  if (initializingUsers.has(username)) {
-    console.log('用户正在初始化中，跳过:', username);
+  if (initializingUsers.has(userKey)) {
+    console.log('用户正在初始化中,跳过:', userKey);
     return { success: true, skipped: true };
   }
   
-  initializingUsers.add(username);
-  markUserInitialized(username);
+  initializingUsers.add(userKey);
+  markUserInitialized(userKey);
   
-  console.log('🎯 开始为新用户初始化引导数据:', username);
+  console.log('🎯 开始为用户初始化引导数据:', userKey);
   
   try {
-    // 【移除】不再初始化周预算，让用户通过预算设置页自己设置
-    // const weekInfo = getWeekInfo(new Date());
-    // await api.saveWeeklyBudget(weekInfo.weekKey, 500);
+    // ✅ 初始化周预算为 500
+    const weekInfo = getWeekInfo(new Date());
+    console.log('📌 设置初始周预算 500...');
+    await api.saveWeeklyBudget(weekInfo.weekKey, 500);
     
     // 1. 创建心愿清单
     console.log('📌 创建示例心愿...');
@@ -102,12 +112,10 @@ export const initGuideDataForUser = async (api, username) => {
     
   } catch (error) {
     console.error('❌ 初始化引导数据失败:', error);
+    // 初始化失败时清除标记以便重试
+    resetUserInitFlag(userKey);
     return { success: false, error: error.message };
   } finally {
-    initializingUsers.delete(username);
+    initializingUsers.delete(userKey);
   }
-};
-
-export const resetUserInitFlag = (username) => {
-  localStorage.removeItem(INIT_FLAG_PREFIX + username);
 };

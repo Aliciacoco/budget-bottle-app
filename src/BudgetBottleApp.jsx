@@ -50,7 +50,7 @@ import {
   getFixedExpenses,
   checkWeekSettled,
   createWishPoolHistory
-} from './api';
+} from './apiSelector';
 import { 
   loadFromCache, 
   saveToCache, 
@@ -58,20 +58,6 @@ import {
   formatDate,
   parseWeekKeyToISO
 } from './utils/helpers';
-
-// ===== API 超时包装器 =====
-// 注意：LeanCloud 服务变慢，超时时间调整为 20s
-const withTimeout = (promise, ms = 20000, fallback = null) => {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => 
-      setTimeout(() => {
-        console.warn(`API 请求超时 (${ms}ms)`);
-        resolve(fallback);
-      }, ms)
-    )
-  ]);
-};
 
 // ===== 加载失败提示组件（使用设计系统） =====
 const LoadingErrorView = ({ error, onRetry }) => (
@@ -256,7 +242,7 @@ const getPreviousWeekInfo = (currentWeekInfo) => {
 // ===== 主组件 =====
 const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   // ===== 加载状态 =====
-  const [loadingState, setLoadingState] = useState('connecting'); // connecting | loading | ready | error
+  const [loadingState, setLoadingState] = useState('connecting');
   const [loadingMessage, setLoadingMessage] = useState('正在连接服务器...');
   const [loadError, setLoadError] = useState(null);
   
@@ -406,21 +392,13 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       const prevWeekInfo = getPreviousWeekInfo(currentWeekInfo);
       const weekKey = prevWeekInfo.weekKey;
       
-      const settledResult = await withTimeout(
-        checkWeekSettled(weekKey),
-        5000,
-        { success: true, settled: true }
-      );
+      const settledResult = await checkWeekSettled(weekKey);
       
       if (settledResult?.settled) {
         return null;
       }
       
-      const budgetRes = await withTimeout(
-        getWeeklyBudget(weekKey),
-        5000,
-        { success: false }
-      );
+      const budgetRes = await getWeeklyBudget(weekKey);
       
       if (!budgetRes?.success || !budgetRes?.data) {
         return null;
@@ -428,11 +406,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       
       const budget = budgetRes.data.amount;
       
-      const transRes = await withTimeout(
-        getTransactions(weekKey),
-        5000,
-        { success: true, data: [] }
-      );
+      const transRes = await getTransactions(weekKey);
       
       const spent = transRes?.success 
         ? transRes.data.reduce((sum, t) => sum + t.amount, 0) 
@@ -501,19 +475,15 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     
     try {
       const [specialRes, fixedRes] = await Promise.all([
-        withTimeout(getSpecialBudgets(), 15000, { success: true, data: [] }),
-        withTimeout(getFixedExpenses(), 15000, { success: true, data: [] })
+        getSpecialBudgets(),
+        getFixedExpenses()
       ]);
       
       if (specialRes?.success) {
         setSpecialBudgets(specialRes.data);
         const itemsMap = {};
         for (const budget of specialRes.data) {
-          const itemsRes = await withTimeout(
-            getSpecialBudgetItems(budget.id),
-            5000,
-            { success: true, data: [] }
-          );
+          const itemsRes = await getSpecialBudgetItems(budget.id);
           if (itemsRes?.success) {
             itemsMap[budget.id] = itemsRes.data;
           }
@@ -529,7 +499,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     }
   };
   
-  // ===== 初始化 - 添加超时和错误处理 =====
+  // ===== 初始化 =====
   const loadCoreData = useCallback(async () => {
     setLoadingState('connecting');
     setLoadingMessage('正在连接服务器...');
@@ -557,18 +527,14 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       setLoadingState('loading');
       
       // 检查上周结算
-      const settlementData = await withTimeout(
-        checkPreviousWeekSettlement(weekInfo),
-        8000,
-        null
-      );
+      const settlementData = await checkPreviousWeekSettlement(weekInfo);
       
       // 并行加载核心数据
       const [budgetRes, transRes, poolRes, wishesRes] = await Promise.all([
-        withTimeout(getWeeklyBudget(weekInfo.weekKey), 20000, { success: false }),
-        withTimeout(getTransactions(weekInfo.weekKey), 20000, { success: false }),
-        withTimeout(getWishPool(), 20000, { success: false }),
-        withTimeout(getWishes(), 20000, { success: false })
+        getWeeklyBudget(weekInfo.weekKey),
+        getTransactions(weekInfo.weekKey),
+        getWishPool(),
+        getWishes()
       ]);
       
       // 检查是否全部失败

@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Check, Trash2 } from 'lucide-react';
 import { FLOATING_ICONS, getFloatingIcon } from '../constants/floatingIcons';
-import { createSpecialBudget, updateSpecialBudget, deleteSpecialBudget } from '../api';
+import { createSpecialBudget, updateSpecialBudget, deleteSpecialBudget } from '../apiSelector';
 
 import { 
   PageContainer,

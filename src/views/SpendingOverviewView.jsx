@@ -18,7 +18,7 @@ import {
   ContentArea,
   colors 
 } from '../components/design-system';
-import { getSpecialBudgets } from '../api';
+import { getSpecialBudgets } from '../apiSelector';
 
 // ==========================================
 // 判断预算是否进行中

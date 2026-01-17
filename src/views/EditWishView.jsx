@@ -1,9 +1,9 @@
 // EditWishView.jsx - 查看/编辑心愿页面
-// 修复：实现心愿和撤销功能
+// ✅ 修复：游客模式使用 base64 存储图片，正式账号上传到云端
 
+import app from '../cloudbase';
 import React, { useState, useRef, useEffect } from 'react';
 import { Edit2, Trash2, Heart, Undo2, ImagePlus, Palette, X, Camera } from 'lucide-react';
-import AV from '../leancloud';
 import { 
   createWish, 
   updateWish, 
@@ -13,7 +13,8 @@ import {
   createWishPoolHistory, 
   getWishPoolHistory, 
   deleteWishPoolHistory 
-} from '../api';
+} from '../apiSelector';
+import { isAnonymousUser } from '../auth';  // ✅ 新增：判断是否游客
 import { WISH_ICONS, getWishIcon, WISH_ICON_KEYS } from '../constants/wishIcons.jsx';
 import Calculator from '../components/CalculatorModal';
 import { CelebrationAnimation } from '../components/animations';
@@ -30,12 +31,41 @@ import {
   ContentArea
 } from '../components/design-system';
 
-const ensureHttps = (url) => {
-  if (!url) return url;
-  return url.replace(/^http:\/\//i, 'https://');
-};
-
 const formatAmount = (amount) => Math.round(amount * 100) / 100;
+
+// ✅ 压缩图片为 base64（游客模式使用）
+const compressImageToBase64 = (file, maxWidth = 800, quality = 0.7) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        
+        // 按比例缩放
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // 转换为 base64
+        const base64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(base64);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 const EditWishView = ({ 
   editingWish, 
@@ -50,8 +80,10 @@ const EditWishView = ({
   const [amount, setAmount] = useState(editingWish?.amount || 0);
   const [selectedIcon, setSelectedIcon] = useState(editingWish?.icon || 'ball1');
   const [imageMode, setImageMode] = useState(editingWish?.image ? 'image' : 'icon');
-  const [imageUrl, setImageUrl] = useState(ensureHttps(editingWish?.image) || '');
-  const [imagePreview, setImagePreview] = useState(ensureHttps(editingWish?.image) || '');
+  // 存储 fileID（cloud:// 格式）或 base64
+  const [imageFileId, setImageFileId] = useState(editingWish?.image || '');
+  // 存储可访问的临时URL（用于预览）
+  const [imagePreview, setImagePreview] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
   const [showCalculator, setShowCalculator] = useState(false);
@@ -60,6 +92,9 @@ const EditWishView = ({
   const [showFulfillConfirm, setShowFulfillConfirm] = useState(false);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // ✅ 判断是否游客模式
+  const isGuest = isAnonymousUser();
   
   // 本地心愿池余额状态 - 确保有最新值
   const [localPoolAmount, setLocalPoolAmount] = useState(formatAmount(propWishPoolAmount || 0));
@@ -81,6 +116,37 @@ const EditWishView = ({
     fetchPoolAmount();
   }, []);
 
+  // 加载已有图片的临时URL
+  useEffect(() => {
+    const loadImagePreview = async () => {
+      if (editingWish?.image) {
+        try {
+          // ✅ 如果是 base64 格式（游客模式），直接使用
+          if (editingWish.image.startsWith('data:')) {
+            setImagePreview(editingWish.image);
+            return;
+          }
+          
+          // 如果是 cloud:// 格式，需要转换
+          if (editingWish.image.startsWith('cloud://')) {
+            const result = await app.getTempFileURL({
+              fileList: [editingWish.image]
+            });
+            if (result.fileList && result.fileList[0] && result.fileList[0].tempFileURL) {
+              setImagePreview(result.fileList[0].tempFileURL);
+            }
+          } else {
+            // 如果是 https:// 格式，直接使用
+            setImagePreview(editingWish.image);
+          }
+        } catch (error) {
+          console.error('加载图片预览失败:', error);
+        }
+      }
+    };
+    loadImagePreview();
+  }, [editingWish?.image]);
+
   // 同步 prop 变化
   useEffect(() => {
     if (propWishPoolAmount !== undefined && propWishPoolAmount !== null) {
@@ -100,7 +166,7 @@ const EditWishView = ({
     setShowCalculator(false); 
   };
 
-  // 处理图片选择
+  // ✅ 处理图片选择 - 根据用户类型选择存储方式
   const handleImageSelect = async (e) => {
     const file = e.target.files?.[0]; 
     if (!file) return;
@@ -113,22 +179,56 @@ const EditWishView = ({
       return; 
     }
     
-    const reader = new FileReader();
-    reader.onload = (e) => { 
-      setImagePreview(e.target.result); 
-    };
-    reader.readAsDataURL(file);
-    
     setIsUploading(true);
+    
     try {
-      const avFile = new AV.File(file.name, file);
-      const savedFile = await avFile.save();
-      const secureUrl = ensureHttps(savedFile.url());
-      setImageUrl(secureUrl); 
-      setImageMode('image');
+      if (isGuest) {
+        // ✅ 游客模式：压缩后存储为 base64
+        console.log('🎭 游客模式：使用 base64 存储图片');
+        const base64 = await compressImageToBase64(file, 600, 0.6);
+        setImageFileId(base64);
+        setImagePreview(base64);
+        setImageMode('image');
+        console.log('✅ 图片压缩完成，大小:', Math.round(base64.length / 1024), 'KB');
+      } else {
+        // ✅ 正式账号：上传到腾讯云
+        console.log('☁️ 正式账号：上传到腾讯云');
+        
+        // 先显示本地预览
+        const reader = new FileReader();
+        reader.onload = (e) => { 
+          setImagePreview(e.target.result); 
+        };
+        reader.readAsDataURL(file);
+        
+        const cloudPath = `wishes/${Date.now()}_${file.name}`;
+        const result = await app.uploadFile({
+          cloudPath: cloudPath,
+          filePath: file,
+        });
+        
+        console.log('📤 上传结果:', result);
+        
+        // 保存 fileID（cloud:// 格式）
+        if (result.fileID) {
+          setImageFileId(result.fileID);
+          setImageMode('image');
+          console.log('✅ 图片上传成功, fileID:', result.fileID);
+          
+          // 获取临时URL用于预览
+          const tempResult = await app.getTempFileURL({
+            fileList: [result.fileID]
+          });
+          if (tempResult.fileList && tempResult.fileList[0] && tempResult.fileList[0].tempFileURL) {
+            setImagePreview(tempResult.fileList[0].tempFileURL);
+          }
+        } else {
+          throw new Error('上传返回结果中没有 fileID');
+        }
+      }
     } catch (error) { 
-      console.error('图片上传失败:', error); 
-      alert('图片上传失败，请重试'); 
+      console.error('图片处理失败:', error); 
+      alert(isGuest ? '图片处理失败，请重试' : '图片上传失败，请重试'); 
       setImagePreview(''); 
     } finally { 
       setIsUploading(false); 
@@ -137,7 +237,7 @@ const EditWishView = ({
 
   // 移除图片
   const handleRemoveImage = () => { 
-    setImageUrl(''); 
+    setImageFileId(''); 
     setImagePreview(''); 
     setImageMode('icon'); 
     if (fileInputRef.current) fileInputRef.current.value = ''; 
@@ -149,7 +249,8 @@ const EditWishView = ({
     setIsLoading(true);
     try {
       let result;
-      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
+      // 保存 fileID 或 base64 到数据库
+      const finalImage = imageMode === 'image' ? imageFileId : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       
       if (isNew) {
@@ -216,7 +317,7 @@ const EditWishView = ({
       console.log('📝 创建扣款记录:', historyResult);
       
       // 2. 更新心愿状态为已实现
-      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
+      const finalImage = imageMode === 'image' ? imageFileId : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       const result = await updateWish(
         editingWish.id, 
@@ -286,7 +387,7 @@ const EditWishView = ({
       }
       
       // 2. 更新心愿状态为未实现
-      const finalImage = imageMode === 'image' ? ensureHttps(imageUrl) : null;
+      const finalImage = imageMode === 'image' ? imageFileId : null;
       const finalIcon = imageMode === 'icon' ? selectedIcon : 'ball1';
       const result = await updateWish(
         editingWish.id, 
@@ -328,8 +429,7 @@ const EditWishView = ({
 
   // --- 查看模式 (View Mode) ---
   if (!isEditMode && !isNew) {
-    const hasImage = editingWish?.image;
-    const secureImageUrl = ensureHttps(editingWish?.image);
+    const hasImage = imagePreview;
     const viewIconConfig = getWishIcon(editingWish?.icon || selectedIcon);
     const IconComponent = viewIconConfig.icon;
     
@@ -349,7 +449,7 @@ const EditWishView = ({
           {hasImage ? (
             <div className="relative w-full aspect-square bg-gray-100">
               <img 
-                src={secureImageUrl}
+                src={imagePreview}
                 alt={description}
                 className="w-full h-full object-cover"
               />
@@ -398,11 +498,6 @@ const EditWishView = ({
                       还差 ¥{remainingAmount.toLocaleString()}
                     </span>
                   )}
-                </div>
-                
-                {/* 调试信息 - 生产环境可删除 */}
-                <div className="mt-2 text-xs text-gray-300 text-center">
-                  心愿池: ¥{localPoolAmount} / 需要: ¥{wishAmount}
                 </div>
               </div>
             )}
@@ -508,7 +603,7 @@ const EditWishView = ({
             wishName={description} 
             amount={wishAmount} 
             wishIcon={selectedIcon} 
-            wishImage={imageMode === 'image' ? ensureHttps(imageUrl) : null} 
+            wishImage={imagePreview} 
             onComplete={handleCelebrationComplete} 
           />
         )}
@@ -654,10 +749,19 @@ const EditWishView = ({
                   ) : (
                     <>
                       <ImagePlus size={32} strokeWidth={1.5} />
-                      <span className="font-bold text-sm">上传心愿图片</span>
+                      <span className="font-bold text-sm">
+                        {isGuest ? '上传心愿图片（本地存储）' : '上传心愿图片'}
+                      </span>
                     </>
                   )}
                 </button>
+              )}
+              
+              {/* 游客模式提示 */}
+              {isGuest && (
+                <p className="text-xs text-gray-400 text-center mt-2">
+                  游客模式下图片保存在本地，建议图片小于 2MB
+                </p>
               )}
             </div>
           )}

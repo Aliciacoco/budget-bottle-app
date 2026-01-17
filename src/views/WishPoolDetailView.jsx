@@ -1,6 +1,7 @@
 // WishPoolDetailView.jsx - 心愿池详情页
 // 视觉更新：纯白页面背景 + 浅灰卡片 (Flat Style)
 // 新增：待转入功能，显示历史周未结算的余额，用户可手动转入
+// 修复：图片URL现在由 api.js 返回时已转换为可访问URL
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Check, History, Droplets, Sparkles, Waves, ChevronRight, AlertCircle } from 'lucide-react';
@@ -10,7 +11,7 @@ import {
   createWishPoolHistory,
   getWeeklyBudget,
   getTransactions
-} from '../api';
+} from '../apiSelector';
 import { parseWeekKeyToISO, getWeekInfo } from '../utils/helpers';
 import { getWishIcon } from '../constants/wishIcons.jsx';
 
@@ -27,11 +28,15 @@ const formatAmount = (amount) => Math.round(amount * 100) / 100;
 
 // --- 心愿卡片组件 (灰色卡片风格) ---
 const WishCard = ({ wish, currentAmount, onClick, isFulfilled = false }) => {
+  const [imgError, setImgError] = useState(false);
+  
   const percent = Math.min(100, (currentAmount / wish.amount) * 100);
   const isAffordable = currentAmount >= wish.amount;
   let barColor = isAffordable ? 'bg-green-400' : 'bg-cyan-400';
   if (isFulfilled) barColor = 'bg-gray-300';
-  const hasImage = wish.image;
+  
+  // 只有当有图片URL且图片没有加载失败时才显示图片
+  const hasImage = wish.image && !imgError;
   const iconConfig = getWishIcon(wish.icon || 'ball1');
   const IconComponent = iconConfig.icon;
 
@@ -44,7 +49,12 @@ const WishCard = ({ wish, currentAmount, onClick, isFulfilled = false }) => {
         <div className="flex items-center gap-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden bg-white shadow-sm`}>
             {hasImage ? (
-              <img src={wish.image} alt={wish.description} className="w-full h-full object-cover" />
+              <img 
+                src={wish.image} 
+                alt={wish.description} 
+                className="w-full h-full object-cover"
+                onError={() => setImgError(true)}
+              />
             ) : (
               <div className={`w-9 h-9 ${isFulfilled ? 'text-gray-300' : 'text-cyan-500'}`}>
                 <IconComponent className="w-full h-full" />

@@ -11,7 +11,7 @@ import {
   createSpecialBudgetTransaction,
   updateSpecialBudgetTransaction,
   deleteSpecialBudgetTransaction
-} from '../api';
+} from '../apiSelector';
 import Calculator from '../components/CalculatorModal';
 
 import { 

@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { createFixedExpense, updateFixedExpense, deleteFixedExpense } from '../api';
+import { createFixedExpense, updateFixedExpense, deleteFixedExpense } from '../apiSelector';
 import Calculator from '../components/CalculatorModal';
 
 import { 
