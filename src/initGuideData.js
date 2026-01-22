@@ -21,7 +21,7 @@ export const resetUserInitFlag = (userKey) => {
 // ==================== 引导数据模板 ====================
 
 const GUIDE_WISHES = [
-  { description: 'AirPods Pro 🎧(示例)', amount: 1899, icon: 'star' },
+  { description: 'AirPods(示例)', amount: 1399, icon: 'ball1' },
 ];
 
 const GUIDE_SPECIAL_BUDGETS = [

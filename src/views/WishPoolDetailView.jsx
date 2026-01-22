@@ -2,6 +2,7 @@
 // 视觉更新：纯白页面背景 + 浅灰卡片 (Flat Style)
 // 新增：待转入功能，显示历史周未结算的余额，用户可手动转入
 // 修复：图片URL现在由 api.js 返回时已转换为可访问URL
+// 修复：使用 onBack prop 进行导航
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Check, History, Droplets, Sparkles, Waves, ChevronRight, AlertCircle } from 'lucide-react';
@@ -137,7 +138,8 @@ const WishPoolDetailView = ({
   wishes, 
   onWishClick, 
   onAddWishClick, 
-  refreshData 
+  refreshData,
+  onBack  // 新增：接收 onBack prop
 }) => {
   const [activeTab, setActiveTab] = useState('pending');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -157,6 +159,15 @@ const WishPoolDetailView = ({
   const totalSpent = formatAmount(history.filter(h => h.isDeduction).reduce((sum, h) => sum + Math.abs(h.savedAmount || 0), 0));
 
   const displayAmount = formatAmount(localWishPoolAmount);
+
+  // 处理返回按钮
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      window.history.back();
+    }
+  };
 
   // 加载历史记录
   const loadHistory = async () => {
@@ -295,7 +306,7 @@ const WishPoolDetailView = ({
     <PageContainer>
       
       <TransparentNavBar 
-        onBack={() => window.history.back()}
+        onBack={handleBack}
         rightButtons={rightButtons}
         variant="default" 
       />

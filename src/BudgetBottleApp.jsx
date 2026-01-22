@@ -1,5 +1,6 @@
 // BudgetBottleApp.jsx - 主应用文件
 // 优化：修复白屏加载问题，使用设计系统组件
+// 修复：设置预算默认使用上周预算、心愿池动画数字、返回导航问题
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronRight, Droplets, RefreshCw, WifiOff } from 'lucide-react';
@@ -252,11 +253,17 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const [isDataReady, setIsDataReady] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   
+  // ===== 导航历史栈（用于正确返回） =====
+  const navigationStackRef = useRef(['home']);
+  
   // ===== 周信息和预算 =====
   const [weekInfo, setWeekInfo] = useState(() => getWeekInfo(new Date()));
   const [weeklyBudget, setWeeklyBudget] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [viewingTransactions, setViewingTransactions] = useState([]);
+  
+  // ===== 上周预算（用于设置本周预算的默认值） =====
+  const [previousWeekBudgetAmount, setPreviousWeekBudgetAmount] = useState(null);
   
   // ===== 心愿池 =====
   const [wishPoolAmount, setWishPoolAmount] = useState(null);
@@ -287,6 +294,9 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const [poolFillAmount, setPoolFillAmount] = useState(0);
   const [showResultModal, setShowResultModal] = useState(false);
   const [settlementData, setSettlementData] = useState({ saved: 0, isEmpty: false });
+  
+  // ===== 动画前的心愿池金额（用于正确显示动画） =====
+  const [preAnimationPoolAmount, setPreAnimationPoolAmount] = useState(null);
   
   // ===== 结算确认弹窗状态 =====
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
@@ -324,6 +334,20 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   const enabledExpenses = (fixedExpenses || []).filter(e => e.enabled !== false);
   const fixedExpensesTotal = enabledExpenses.reduce((sum, e) => sum + e.amount, 0);
   
+  // ===== 计算设置预算弹窗的默认值 =====
+  const getDefaultBudgetAmount = useCallback(() => {
+    // 优先使用上周预算
+    if (previousWeekBudgetAmount && previousWeekBudgetAmount > 0) {
+      return previousWeekBudgetAmount;
+    }
+    // 其次使用当前周预算
+    if (budgetAmount > 0) {
+      return budgetAmount;
+    }
+    // 最后使用月预算/4
+    return monthlyBudget / 4;
+  }, [previousWeekBudgetAmount, budgetAmount, monthlyBudget]);
+  
   // ===== 更新缓存的工具函数 =====
   const updateTransactionsCache = useCallback((newTransactions) => {
     const cached = loadFromCache() || {};
@@ -338,16 +362,49 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     });
   }, [updateTransactionsCache]);
   
-  // ===== 导航函数 =====
-  const navigateTo = (view, params = {}) => {
+  // ===== 导航函数（优化版） =====
+  const navigateTo = useCallback((view, params = {}) => {
+    // 更新导航栈
+    if (view === 'home') {
+      // 回到首页时清空栈
+      navigationStackRef.current = ['home'];
+      window.history.replaceState({ view: 'home', params: {} }, '', '#home');
+    } else {
+      navigationStackRef.current.push(view);
+      window.history.pushState({ view, params }, '', `#${view}`);
+    }
     setViewParams(params);
     setCurrentView(view);
-    window.history.pushState({ view, params }, '', `#${view}`);
-  };
+  }, []);
+  
+  // ===== 返回函数（优化版） =====
+  const goBack = useCallback(() => {
+    const stack = navigationStackRef.current;
+    
+    // 如果栈里只有首页或为空，直接回首页
+    if (stack.length <= 1) {
+      navigateTo('home');
+      return;
+    }
+    
+    // 弹出当前页面
+    stack.pop();
+    
+    // 获取上一个页面
+    const previousView = stack[stack.length - 1] || 'home';
+    
+    // 使用 replaceState 而不是 back，避免历史记录问题
+    window.history.replaceState({ view: previousView, params: {} }, '', `#${previousView}`);
+    setCurrentView(previousView);
+    setViewParams({});
+  }, [navigateTo]);
   
   // ===== 播放结算动画 =====
   const playSettlementAnimation = useCallback((savedAmount, isEmpty) => {
     return new Promise((resolve) => {
+      // 保存动画开始前的心愿池金额
+      setPreAnimationPoolAmount(displayPoolAmount);
+      
       setSettlementPhase('raining');
       setSettlementData({ saved: savedAmount, isEmpty });
       
@@ -375,7 +432,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         resolve();
       }, 2500);
     });
-  }, []);
+  }, [displayPoolAmount]);
   
   // ===== 处理结算队列 =====
   useEffect(() => {
@@ -394,11 +451,17 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       
       const settledResult = await checkWeekSettled(weekKey);
       
+      // 获取上周预算（无论是否已结算，都要获取用于默认值）
+      const budgetRes = await getWeeklyBudget(weekKey);
+      
+      if (budgetRes?.success && budgetRes?.data) {
+        // 保存上周预算金额
+        setPreviousWeekBudgetAmount(budgetRes.data.amount);
+      }
+      
       if (settledResult?.settled) {
         return null;
       }
-      
-      const budgetRes = await getWeeklyBudget(weekKey);
       
       if (!budgetRes?.success || !budgetRes?.data) {
         return null;
@@ -526,7 +589,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       setLoadingMessage('正在加载数据...');
       setLoadingState('loading');
       
-      // 检查上周结算
+      // 检查上周结算（同时会获取上周预算用于默认值）
       const settlementData = await checkPreviousWeekSettlement(weekInfo);
       
       // 并行加载核心数据
@@ -613,9 +676,24 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     
     const handlePopState = (event) => {
       if (event.state) {
-        setCurrentView(event.state.view || 'home');
+        const targetView = event.state.view || 'home';
+        const stack = navigationStackRef.current;
+        
+        // 找到目标视图在栈中的位置
+        const targetIndex = stack.lastIndexOf(targetView);
+        
+        if (targetIndex >= 0) {
+          // 截取栈到目标位置
+          navigationStackRef.current = stack.slice(0, targetIndex + 1);
+        } else {
+          // 如果找不到，直接回首页
+          navigationStackRef.current = ['home'];
+        }
+        
+        setCurrentView(targetView);
         setViewParams(event.state.params || {});
       } else {
+        navigationStackRef.current = ['home'];
         setCurrentView('home');
         setViewParams({});
       }
@@ -676,6 +754,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     setSettlementPhase('idle');
     setDrainProgress(0);
     setPoolFillAmount(0);
+    setPreAnimationPoolAmount(null); // 重置动画前金额
     
     try {
       const poolRes = await getWishPool();
@@ -756,6 +835,19 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
     } catch (error) {
       console.error('刷新数据失败:', error);
     }
+  };
+  
+  // ===== 计算心愿池显示金额 =====
+  const getPoolDisplayAmount = () => {
+    if (isDebugMode) return debugPoolAmount;
+    
+    // 如果正在播放动画，使用动画前的金额 + 当前填充量
+    if (settlementPhase !== 'idle' && preAnimationPoolAmount !== null) {
+      return preAnimationPoolAmount + poolFillAmount;
+    }
+    
+    // 正常显示
+    return displayPoolAmount;
   };
   
   // ===== 首页渲染 =====
@@ -903,8 +995,8 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
               zIndex: 30 
             }}>
               <WishPoolBar 
-                poolAmount={isDebugMode ? debugPoolAmount : (displayPoolAmount + poolFillAmount)} 
-                animatingAmount={poolFillAmount}
+                poolAmount={getPoolDisplayAmount()} 
+                animatingAmount={settlementPhase !== 'idle' ? poolFillAmount : 0}
                 wishes={wishes} 
                 onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })} 
                 onPoolClick={() => navigateTo('wishPoolDetail')} 
@@ -951,7 +1043,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         
         {showSetBudgetModal && (
           <Calculator
-            value={budgetAmount || monthlyBudget / 4}
+            value={getDefaultBudgetAmount()}
             onChange={handleSetWeeklyBudget}
             onClose={() => setShowSetBudgetModal(false)}
             showNote={false}
@@ -979,7 +1071,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       case 'brandMenu':
         return (
           <BrandMenuView
-            onBack={() => window.history.back()}
+            onBack={goBack}
             onLogout={onLogout}
             onSwitchToLogin={onSwitchAccount}
             currentUser={currentUser}
@@ -989,7 +1081,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
       case 'spendingOverview':
         return (
           <SpendingOverviewView
-            onBack={() => window.history.back()}
+            onBack={goBack}
             navigateTo={navigateTo}
             weeklySpent={weeklySpent}
             weeklyBudget={budgetAmount}
@@ -1004,7 +1096,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
         return (
           <FixedExpenseListView
             fixedExpenses={fixedExpenses}
-            onBack={() => window.history.back()}
+            onBack={goBack}
             navigateTo={navigateTo}
           />
         );
@@ -1019,6 +1111,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             setTransactions={updateTransactions}
             navigateTo={navigateTo}
             isDataReady={isDataReady}
+            onBack={goBack}
           />
         );
         
@@ -1031,6 +1124,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             setTransactions={updateTransactions}
             viewingTransactions={viewingTransactions}
             setViewingTransactions={setViewingTransactions}
+            onBack={goBack}
           />
         );
         
@@ -1042,6 +1136,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             onWishClick={(wish) => navigateTo('editWish', { editingWish: wish })}
             onAddWishClick={() => navigateTo('editWish', { editingWish: {} })}
             refreshData={refreshData}
+            onBack={goBack}
           />
         );
         
@@ -1053,6 +1148,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             setWishes={setWishes}
             wishPoolAmount={displayPoolAmount}
             setWishPoolAmount={setWishPoolAmount}
+            onBack={goBack}
           />
         );
         
@@ -1062,7 +1158,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             editingExpense={viewParams.editingExpense}
             fixedExpenses={fixedExpenses}
             setFixedExpenses={setFixedExpenses}
-            onBack={() => window.history.back()}
+            onBack={goBack}
           />
         );
       
@@ -1073,7 +1169,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             setSpecialBudgets={setSpecialBudgets}
             specialBudgetItems={specialBudgetItems}
             navigateTo={navigateTo}
-            onBack={() => window.history.back()}
+            onBack={goBack}
             isDataReady={isSecondaryLoaded}
           />
         );
@@ -1085,6 +1181,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             specialBudgets={specialBudgets}
             setSpecialBudgets={setSpecialBudgets}
             navigateTo={navigateTo}
+            onBack={goBack}
           />
         );
         
@@ -1094,7 +1191,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             editingSpecialBudget={viewParams.editingSpecialBudget}
             specialBudgets={specialBudgets}
             setSpecialBudgets={setSpecialBudgets}
-            onBack={() => window.history.back()}
+            onBack={goBack}
           />
         );
       
@@ -1104,7 +1201,7 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
             editingItem={viewParams.editingItem}
             budgetId={viewParams.budgetId}
             iconColor={viewParams.iconColor}
-            onBack={() => window.history.back()}
+            onBack={goBack}
           />
         );
         

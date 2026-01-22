@@ -6,17 +6,48 @@ import React from 'react';
 // --- 自定义图标组件 ---
 
 const Ball1 = (props) => (
-  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <g clipPath="url(#clip0_ball1)">
-      <rect x="1" y="1" width="62" height="62" rx="31" fill="#F2C94C" stroke="white" strokeWidth="2"/>
-      <path opacity="0.3" fillRule="evenodd" clipRule="evenodd" d="M19.9999 28C23.8659 28 27 24.6422 27 20.5C27 16.3578 23.8659 13 19.9999 13C16.134 13 13 16.3578 13 20.5C13 24.6422 16.134 28 19.9999 28Z" fill="white"/>
-    </g>
-    <defs>
-      <clipPath id="clip0_ball1">
-        <rect width="64" height="64" fill="white"/>
-      </clipPath>
-    </defs>
-  </svg>
+  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M2 31.9717C2 30.1546 3.22831 28.5809 5.0148 28.2488C9.42821 27.4286 18.6049 26.1104 32 26.1104C45.3951 26.1104 54.5718 27.4286 58.9852 28.2488C60.7717 28.5809 62 30.1546 62 31.9717V45.9992C62 53.7312 55.732 59.9992 48 59.9992H16C8.26802 59.9992 2 53.7312 2 45.9992V31.9717Z" fill="#FF7E7E"/>
+<g filter="url(#filter0_d_634_2228)">
+<rect x="2" y="7.77734" width="60" height="21.1111" rx="10.5556" fill="#FF4B4B"/>
+</g>
+<ellipse cx="32.0002" cy="29.4438" rx="28.8889" ry="2.77778" fill="#FF4B4B"/>
+<path d="M21.4346 57.1374C22.8331 56.9414 23.8117 55.5991 23.6092 54.1547L20.0356 28.6634C19.8331 27.2189 18.5232 26.1975 17.1247 26.3935C15.7263 26.5896 14.7477 27.9318 14.9502 29.3763L18.5226 54.8594C18.7251 56.3038 20.0361 57.3335 21.4346 57.1374Z" fill="white"/>
+<path d="M18.26 9.51677C21.473 9.06635 25.5388 9.95751 28.1514 11.8851C29.2102 12.6636 29.8963 13.8322 30.0756 15.1111L30.8726 20.7968C31.053 22.0834 30.7136 23.3879 29.9097 24.4275C27.9268 26.9915 24.2715 28.9729 21.0507 29.4244C15.3853 30.2187 10.1665 26.4097 9.3954 20.9089C8.62534 15.4158 12.5945 10.311 18.26 9.51677Z" fill="white"/>
+<path d="M16.8229 20.4669L13.8421 20.8848C13.3744 20.9504 12.9322 20.5887 12.8612 20.0825L12.7913 19.5838C12.7204 19.0776 13.0461 18.6083 13.5138 18.5427L16.4946 18.1248C16.9623 18.0593 17.4045 18.421 17.4755 18.9272L17.5454 19.4258C17.6163 19.932 17.2906 20.4014 16.8229 20.4669Z" fill="#58CC02"/>
+<path d="M43.2529 54.1374C41.8544 53.9414 40.8758 52.5991 41.0783 51.1547L44.6519 25.6634C44.8544 24.2189 46.1643 23.1975 47.5628 23.3935C48.9612 23.5896 49.9398 24.9318 49.7373 26.3763L46.1649 51.8594C45.9624 53.3038 44.6514 54.3335 43.2529 54.1374Z" fill="white"/>
+<path d="M46.4275 6.51677C43.2145 6.06635 39.1487 6.95751 36.5361 8.8851C35.4773 9.66364 34.7912 10.8322 34.6119 12.1111L33.8149 17.7968C33.6345 19.0834 33.9739 20.3879 34.7778 21.4275C36.7607 23.9915 40.416 25.9729 43.6368 26.4244C49.3022 27.2187 54.521 23.4097 55.2921 17.9089C56.0622 12.4158 52.093 7.31099 46.4275 6.51677Z" fill="white"/>
+<path d="M47.8646 17.4669L50.8454 17.8848C51.3131 17.9504 51.7553 17.5887 51.8263 17.0825L51.8962 16.5838C51.9671 16.0776 51.6414 15.6083 51.1737 15.5427L48.1929 15.1248C47.7252 15.0593 47.283 15.421 47.212 15.9272L47.1421 16.4258C47.0712 16.932 47.3969 17.4014 47.8646 17.4669Z" fill="#58CC02"/>
+<g filter="url(#filter1_d_634_2228)">
+<path d="M3.21289 30.2129C4.46429 31.3532 17.1235 32.249 32.5557 32.249C46.3381 32.249 57.9085 31.5335 61.1162 30.5684C61.6708 31.2476 62 32.119 62 33.0635V46.583C61.9999 54.3149 55.7319 60.583 48 60.583H16C8.26809 60.583 2.00013 54.3149 2 46.583V33.0635C2.00001 31.9448 2.46134 30.9285 3.21289 30.2129Z" fill="#FF7E7E"/>
+</g>
+<circle cx="31.9998" cy="41.1101" r="1.11111" fill="#58CC02"/>
+<defs>
+<filter id="filter0_d_634_2228" x="2" y="5.77734" width="60" height="23.1113" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="-2"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 0.494118 0 0 0 0 0.494118 0 0 0 1 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_634_2228"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_634_2228" result="shape"/>
+</filter>
+<filter id="filter1_d_634_2228" x="2" y="30.2129" width="60" height="32.3701" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="2"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 0.294118 0 0 0 0 0.294118 0 0 0 1 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_634_2228"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_634_2228" result="shape"/>
+</filter>
+</defs>
+</svg>
+
+
+
+
+
 );
 
 const Island = (props) => (

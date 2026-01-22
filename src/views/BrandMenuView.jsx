@@ -158,7 +158,7 @@ const LogOutFilled = ({ size = 22, className = '' }) => (
 
 const ShareModal = ({ isOpen, onClose }) => {
   const [copied, setCopied] = useState(false);
-  const shareUrl = 'https://cloudpool.app';
+  const shareUrl = 'https://cloudpool.youwen.space';
   
   const handleCopy = useCallback(async () => {
     const success = await copyToClipboard(shareUrl);

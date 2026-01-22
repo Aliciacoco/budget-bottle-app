@@ -1,5 +1,6 @@
 // LoginView.jsx - 登录页面
 // 修复：按钮状态切换导致的屏幕闪烁问题
+// 修复：电脑端居中显示，最大宽度480px
 
 import React, { useState, useCallback } from 'react';
 import { ArrowLeft, Eye, EyeOff, X, Mail, MessageCircle } from 'lucide-react';
@@ -173,157 +174,162 @@ const LoginView = ({ onLoginSuccess, onBack, onGuestMode, showGuestOption = true
   const [showGetAccount, setShowGetAccount] = useState(false);
   
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError('');
-  
-  if (!username.trim()) {
-    setError('请输入账号');
-    return;
-  }
-  
-  if (!password) {
-    setError('请输入密码');
-    return;
-  }
-  
-  setIsLoading(true);
-  
-  try {
-    const result = await login(username, password);  // ✅ 加上 await
+    e.preventDefault();
+    setError('');
     
-    if (result.success) {
-      onLoginSuccess(result.user);
-    } else {
-      setError(result.error || '登录失败');
+    if (!username.trim()) {
+      setError('请输入账号');
+      return;
     }
-  } catch (err) {
-    setError('网络错误，请重试');
-    console.error('登录异常:', err);
-  } finally {
-    setIsLoading(false);
-  }
-};
+    
+    if (!password) {
+      setError('请输入密码');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      const result = await login(username, password);
+      
+      if (result.success) {
+        onLoginSuccess(result.user);
+      } else {
+        setError(result.error || '登录失败');
+      }
+    } catch (err) {
+      setError('网络错误，请重试');
+      console.error('登录异常:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    // 外层容器：灰色背景，用于电脑端显示
+    <div className="min-h-screen bg-gray-100 overflow-x-hidden">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
         .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
       `}</style>
       
-      {/* 顶部 */}
-      <div className="px-6 pt-6 flex items-center justify-between">
-        {onBack ? (
-          <button 
-            onClick={onBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 active:bg-gray-100"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-        ) : (
+      {/* 内层容器：白色背景，最大宽度480px，居中显示 */}
+      <div className="min-h-screen bg-gray-50 max-w-[480px] mx-auto relative shadow-sm flex flex-col">
+        
+        {/* 顶部 */}
+        <div className="px-6 pt-6 flex items-center justify-between">
+          {onBack ? (
+            <button 
+              onClick={onBack}
+              className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 active:bg-gray-100"
+            >
+              <ArrowLeft size={24} strokeWidth={2.5} />
+            </button>
+          ) : (
+            <div className="w-12" />
+          )}
           <div className="w-12" />
-        )}
-        <div className="w-12" />
-      </div>
-      
-      {/* Logo 区域 */}
-      <div className="flex flex-col items-center px-6 pt-8 pb-6">
-        <h1 className="text-3xl font-extrabold text-cyan-500 font-rounded">
-          CloudPool
-        </h1>
-        <p className="text-gray-400 text-sm font-medium mt-1">周预算工具 · 内测版</p>
-      </div>
-      
-      {/* 表单卡片 */}
-      <div className="px-6 flex-1">
-        <div className="bg-white rounded-3xl p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 账号 */}
-            <div>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="账号"
-                className="w-full px-4 py-4 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-                autoComplete="username"
-                autoCapitalize="off"
-              />
-            </div>
-            
-            {/* 密码 */}
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="密码"
-                className="w-full px-4 py-4 pr-12 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-gray-400"
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-            
-            {/* 错误提示 */}
-            {error && (
-              <p className="text-red-500 font-bold text-sm text-center">{error}</p>
-            )}
-            
-            {/* 登录按钮 */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-4 bg-cyan-500 text-white font-extrabold text-lg rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-70 border-b-4 border-cyan-600 active:border-b-2 active:translate-y-[2px] transition-all"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                '登录'
+        </div>
+        
+        {/* Logo 区域 */}
+        <div className="flex flex-col items-center px-6 pt-8 pb-6">
+          <h1 className="text-3xl font-extrabold text-cyan-500 font-rounded">
+            CloudPool
+          </h1>
+          <p className="text-gray-400 text-sm font-medium mt-1">周预算工具 · 内测版</p>
+        </div>
+        
+        {/* 表单卡片 */}
+        <div className="px-6 flex-1">
+          <div className="bg-white rounded-3xl p-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* 账号 */}
+              <div>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="账号"
+                  className="w-full px-4 py-4 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                />
+              </div>
+              
+              {/* 密码 */}
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="密码"
+                  className="w-full px-4 py-4 pr-12 bg-gray-100 border-2 border-gray-200 rounded-2xl font-bold text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-cyan-400 transition-colors"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-gray-400"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              
+              {/* 错误提示 */}
+              {error && (
+                <p className="text-red-500 font-bold text-sm text-center">{error}</p>
               )}
-            </button>
-            
-            {/* 游客模式 */}
-            {showGuestOption && onGuestMode && (
+              
+              {/* 登录按钮 */}
               <button
-                type="button"
-                onClick={onGuestMode}
-                className="w-full py-4 bg-white text-gray-600 font-bold rounded-2xl border-2 border-gray-200 border-b-4 active:border-b-2 active:translate-y-[2px] transition-all"
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-4 bg-cyan-500 text-white font-extrabold text-lg rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-70 border-b-4 border-cyan-600 active:border-b-2 active:translate-y-[2px] transition-all"
               >
-                以游客身份体验
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  '登录'
+                )}
               </button>
-            )}
-          </form>
-          
-          {/* 获取账号 */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setShowGetAccount(true)}
-              className="text-gray-400 font-bold text-sm"
-            >
-              获取内测账号，随时同步数据
-            </button>
+              
+              {/* 游客模式 */}
+              {showGuestOption && onGuestMode && (
+                <button
+                  type="button"
+                  onClick={onGuestMode}
+                  className="w-full py-4 bg-white text-gray-600 font-bold rounded-2xl border-2 border-gray-200 border-b-4 active:border-b-2 active:translate-y-[2px] transition-all"
+                >
+                  以游客身份体验
+                </button>
+              )}
+            </form>
+            
+            {/* 获取账号 */}
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => setShowGetAccount(true)}
+                className="text-gray-400 font-bold text-sm"
+              >
+                获取内测账号，随时同步数据
+              </button>
+            </div>
           </div>
         </div>
+        
+        {/* 底部 */}
+        <div className="px-6 py-6">
+          <p className="text-gray-300 text-xs text-center">
+            v1.0 Beta
+          </p>
+        </div>
+        
+        {/* 弹窗 */}
+        <GetAccountModal
+          isOpen={showGetAccount}
+          onClose={() => setShowGetAccount(false)}
+        />
       </div>
-      
-      {/* 底部 */}
-      <div className="px-6 py-6">
-        <p className="text-gray-300 text-xs text-center">
-          v1.0 Beta
-        </p>
-      </div>
-      
-      {/* 弹窗 */}
-      <GetAccountModal
-        isOpen={showGetAccount}
-        onClose={() => setShowGetAccount(false)}
-      />
     </div>
   );
 };
