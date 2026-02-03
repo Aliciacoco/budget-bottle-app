@@ -90,12 +90,16 @@ const EditSpecialBudgetItemView = ({
   }, [isEditing, loadTransactions]);
   
   const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      window.history.back();
-    }
-  };
+  if (onBack) {
+    // ✅ 传递 budgetId 给父组件
+    onBack({ 
+      budgetId: budgetId,
+      shouldReload: true 
+    });
+  } else {
+    window.history.back();
+  }
+};
   
   const handleSave = async () => {
     if (!name.trim()) {
@@ -123,10 +127,18 @@ const EditSpecialBudgetItemView = ({
       }
       
       if (result.success) {
-        handleBack();
-      } else {
-        alert('保存失败: ' + result.error);
-      }
+    if (onBack) {
+      // ✅ 传递 budgetId 给父组件
+      onBack({ 
+        budgetId: budgetId,
+        shouldReload: true,
+        newItem: result.data 
+      });
+    } else {
+      handleBack();
+    }
+  }
+      
     } finally {
       setIsSaving(false);
     }

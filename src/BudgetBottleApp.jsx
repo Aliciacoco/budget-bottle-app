@@ -378,26 +378,32 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   }, []);
   
   // ===== 返回函数（优化版） =====
-  const goBack = useCallback(() => {
-    const stack = navigationStackRef.current;
-    
-    // 如果栈里只有首页或为空，直接回首页
-    if (stack.length <= 1) {
-      navigateTo('home');
-      return;
+  // BudgetBottleApp.jsx - 最简单的修复
+
+const goBack = useCallback((returnData = {}) => {
+  const stack = navigationStackRef.current;
+  
+  if (stack.length <= 1) {
+    navigateTo('home');
+    return;
+  }
+  
+  stack.pop();
+  const previousView = stack[stack.length - 1] || 'home';
+  
+  // ✅ 简单修复：如果返回到详情页且有 budgetId，从 specialBudgets 中找到预算
+  let params = {};
+  if (previousView === 'specialBudgetDetail' && returnData.budgetId) {
+    const budget = specialBudgets.find(b => b.id === returnData.budgetId);
+    if (budget) {
+      params = { editingSpecialBudget: budget };
     }
-    
-    // 弹出当前页面
-    stack.pop();
-    
-    // 获取上一个页面
-    const previousView = stack[stack.length - 1] || 'home';
-    
-    // 使用 replaceState 而不是 back，避免历史记录问题
-    window.history.replaceState({ view: previousView, params: {} }, '', `#${previousView}`);
-    setCurrentView(previousView);
-    setViewParams({});
-  }, [navigateTo]);
+  }
+  
+  window.history.replaceState({ view: previousView, params }, '', `#${previousView}`);
+  setCurrentView(previousView);
+  setViewParams(params);
+}, [navigateTo, specialBudgets]);
   
   // ===== 播放结算动画 =====
   const playSettlementAnimation = useCallback((savedAmount, isEmpty) => {
@@ -526,11 +532,36 @@ const BudgetBottleApp = ({ currentUser, onLogout, onSwitchAccount }) => {
   };
   
   // ===== 用户跳过存入 =====
-  const handleSkipSettlement = () => {
-    setShowSettlementConfirm(false);
-    setPendingSettlementData(null);
-    setIsTestMode(false);
-  };
+  const handleSkipSettlement = async () => {
+  // ✅ 修复：跳过时也要创建历史记录，避免重复弹窗
+  if (pendingSettlementData && !isTestMode) {
+    const { weekKey, budget, spent } = pendingSettlementData;
+    
+    console.log('📝 用户跳过结算，创建历史记录防止重复弹窗', { weekKey });
+    
+    try {
+      // 创建历史记录，savedAmount 传 0 表示用户跳过了
+      // 这样 checkWeekSettled 下次会返回 true，不会再弹窗
+      await createWishPoolHistory(
+        weekKey,     // 周标识
+        budget,      // 预算金额
+        spent,       // 消费金额
+        0,           // ✅ 存入金额为 0（用户跳过）
+        false,       // isDeduction
+        '用户跳过',  // note
+        ''           // wishId
+      );
+      console.log('✅ 跳过记录已创建,下次不会再弹窗');
+    } catch (error) {
+      console.error('❌ 创建跳过记录失败:', error);
+      // 即使失败也继续关闭弹窗，避免卡住
+    }
+  }
+  
+  setShowSettlementConfirm(false);
+  setPendingSettlementData(null);
+  setIsTestMode(false);
+};
   
   // ===== 加载次要数据 =====
   const loadSecondaryData = async () => {
